@@ -32,6 +32,9 @@ services:
     volumes:
       - .:/app
       - /app/.venv
+      # Docker Desktop bind mounts ignore chmod, so shadow the secret file:
+      # config comes from `env_file` above; nothing should read /app/.env.
+      - /dev/null:/app/.env:ro
       - agy_outbox:/outbox
     ports: ["8010:8000"]
     depends_on:
@@ -45,6 +48,7 @@ services:
     volumes:
       - .:/app
       - /app/.venv
+      - /dev/null:/app/.env:ro
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -60,6 +64,7 @@ services:
     volumes:
       - .:/app
       - /app/.venv
+      - /dev/null:/app/.env:ro
       - agy_outbox:/outbox
       # VERIFIED: the token file ALONE is enough; agy bootstraps the rest.
       # MUST be read-write — agy rewrites this file when it refreshes.
@@ -80,6 +85,7 @@ services:
     volumes:
       - .:/app
       - /app/.venv
+      - /dev/null:/app/.env:ro
     depends_on:
       redis: {condition: service_healthy}
     # EXACTLY ONE. N beats = N× the hourly cleanup.

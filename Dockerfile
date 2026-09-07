@@ -49,5 +49,14 @@ COPY alembic.ini pyproject.toml ./
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# --- Layer 0 + 1: the app tree must be unreadable to the unprivileged `agy`
+# user. Secrets never enter the image (.env is in .dockerignore; they arrive at
+# runtime via compose `env_file`) — assert that, then lock /app to root only.
+# Every long-running service runs as root and keeps full access; `agy` runs as
+# uid 1001 with its own /tmp workdir and can read nothing here — not the source,
+# not a stray .env, not the configs.
+RUN test ! -e /app/.env || { echo "SECURITY: .env must not be baked into the image"; exit 1; }
+RUN chown -R root:root /app && chmod -R go-rwx /app
+
 # Root at runtime — the entrypoint gosu's down to `agy` per agy call.
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
