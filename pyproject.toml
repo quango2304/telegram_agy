@@ -1,0 +1,33 @@
+[project]
+name = "telegram-agy"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+  "python-telegram-bot>=22,<23",
+  "sqlalchemy[asyncio]>=2.0",
+  "asyncpg>=0.30",
+  "psycopg2-binary>=2.9",       # alembic (sync) only
+  "alembic>=1.14",
+  "celery[redis]>=5.4",
+  "redis>=5.2",
+  "mcp>=2.0",
+  "uvicorn[standard]>=0.34",
+  "starlette>=0.46",
+  "dependency-injector>=4.42",
+  "dynaconf>=3.2",
+  "watchfiles>=1.0",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.9", "ty>=0.0.1"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["specs", "migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+
+[tool.ty.environment]
+python-version = "3.13"
