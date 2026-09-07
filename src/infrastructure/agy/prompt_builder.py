@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from src.shared.persona import BOT_LABEL, PERSONA_PROMPT, SECRET_GUARD
+from src.shared.persona import BOT_LABEL, PERSONA_PROMPT, SECRET_GUARD, tool_usage_guide
 
 
 @dataclass(frozen=True)
@@ -71,18 +71,7 @@ def build_prompt(
 ) -> str:
     mem_text = (memory or "").strip() or "(chưa có gì)"
     pending = list(pending or [])
-    extra_tools_line = (
-        "CÔNG CỤ NGOÀI: bạn có CLI `composio` (đã đăng nhập sẵn) để thao tác Google "
-        "Drive, Gmail, tìm kiếm web, v.v. Nếu người ta nhờ việc cần công cụ này thì "
-        'PHẢI làm thật: chạy `composio search "<việc>"` tìm tool, '
-        "`composio execute <TOOL_SLUG> --get-schema` xem input, rồi "
-        "`composio execute <TOOL_SLUG> -d '{...}'` để chạy (kết quả download thường là "
-        "một s3url — dùng `curl -sL '<url>' -o /outbox/<tên-file>` để lấy về). "
-        "Gửi file cho người dùng: đặt file vào /outbox/ rồi gọi tool `send_chat_file` "
-        "ĐÚNG MỘT LẦN cho mỗi file.\n"
-        if extra_tools
-        else ""
-    )
+    tools_block = tool_usage_guide(composio=extra_tools)
     rendered = [_fmt_line(h, bot_username, truncate_chars) for h in history]
     trigger_body = _strip_handle(trigger_text, bot_username)
     if len(trigger_body) > truncate_chars:
@@ -138,8 +127,8 @@ def build_prompt(
             "memory mới (tool này GHI ĐÈ, không nối thêm; group thì memory dùng chung\n"
             "cho cả nhóm, mọi topic).\n"
             "Nếu người ta nhờ làm gì đó vào lúc khác hoặc định kỳ (vd 'mai nhắc...',\n"
-            "'mỗi sáng 9h...'), hãy gọi tool `schedule_task` với session_key ở trên.\n"
-            f"{extra_tools_line}"
+            "'mỗi sáng 9h...'), hãy gọi tool `schedule_task` với session_key ở trên.\n\n"
+            f"{tools_block}\n\n"
             "Người ta nhờ việc cụ thể (tìm file, tra cứu, gửi file, đặt lịch...) thì "
             "LÀM cho xong đã, xong rồi muốn cà khịa gì thì cà — đừng né việc để đi "
             "chọc ngoáy.\n\n"
