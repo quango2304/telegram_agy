@@ -53,9 +53,9 @@ class _PlainFormatter(logging.Formatter):
         return base
 
 
-def _configure() -> None:
+def _configure(force: bool = False) -> None:
     global _CONFIGURED
-    if _CONFIGURED:
+    if _CONFIGURED and not force:
         return
 
     # Imported lazily to avoid a circular import at module load.
@@ -70,6 +70,12 @@ def _configure() -> None:
     root.addHandler(handler)
     root.setLevel(settings.log_level.upper())
     _CONFIGURED = True
+
+
+def reconfigure() -> None:
+    """Re-assert our handlers after something else (e.g. Alembic's ``fileConfig``)
+    has stomped the root logger."""
+    _configure(force=True)
 
 
 def get_logger(name: str) -> logging.Logger:

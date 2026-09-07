@@ -23,7 +23,9 @@ from src.domain.entities.thread_memory import ThreadMemory  # noqa: F401
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers defaults to True and would silence the app's
+    # loggers for the rest of the process (bot.py runs this in-process).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 _url = os.environ.get("ALEMBIC_DATABASE_URL")
 if _url:
