@@ -110,10 +110,8 @@ class AgyClient:
                 return AgyResult(ok=False, text="", raw={"error": "timeout"})
 
             if proc.returncode != 0:
-                logger.error(
-                    "agy exited non-zero",
-                    extra={"code": proc.returncode, "stderr": err.decode(errors="replace")[:2000]},
-                )
+                tail = err.decode(errors="replace")[-1500:].strip()
+                logger.error("agy exited non-zero code=%s stderr=%s", proc.returncode, tail)
                 return AgyResult(ok=False, text="", raw={"error": "nonzero"})
 
             try:
