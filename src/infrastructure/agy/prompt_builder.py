@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from src.shared.persona import BOT_LABEL, PERSONA_PROMPT
+from src.shared.persona import BOT_LABEL, PERSONA_PROMPT, SECRET_GUARD
 
 
 @dataclass(frozen=True)
@@ -119,6 +119,7 @@ def build_prompt(
         history_block = "\n".join(lines) if lines else "(chưa có tin nào)"
         return (
             f"{PERSONA_PROMPT}\n\n"
+            f"{SECRET_GUARD}\n\n"
             f"Bây giờ là {now_local} (giờ Việt Nam).\n"
             f"session_key = {session_key}\n\n"
             "CÁCH TRẢ LỜI: bạn KHÔNG nói chuyện trực tiếp với người dùng. Muốn nhắn gì\n"
@@ -144,7 +145,8 @@ def build_prompt(
             "chọc ngoáy.\n\n"
             f"Ghi nhớ hiện tại về nhóm này:\n{mem}\n\n"
             f"Lịch sử chat gần đây (cũ → mới):\n{history_block}\n\n"
-            f"{closing}"
+            f"{closing}\n\n"
+            f"[Nhắc lại] {SECRET_GUARD}"
         )
 
     prompt = assemble(rendered, mem_text)

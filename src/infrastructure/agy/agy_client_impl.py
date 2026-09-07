@@ -21,6 +21,7 @@ from typing import Any
 
 from src.infrastructure.config import Settings
 from src.shared.logger import get_logger
+from src.shared.persona import SECRET_GUARD
 
 logger = get_logger(__name__)
 
@@ -76,6 +77,15 @@ class AgyClient:
         proc: asyncio.subprocess.Process | None = None
         try:
             os.chown(workdir, pw.pw_uid, pw.pw_gid)
+            # agy walks up from cwd loading AGENTS.md as a hard workspace rule.
+            # Drop the secret-guard here too — third copy, and the strongest
+            # framing (a rule, not a request in the prompt body).
+            agents_md = os.path.join(workdir, "AGENTS.md")
+            # tiny one-shot write to a fresh tmpfile; same blocking-fs style as
+            # the mkdtemp/chown calls around it.
+            with open(agents_md, "w", encoding="utf-8") as fh:  # noqa: ASYNC230
+                fh.write(f"# Quy tắc bắt buộc\n\n{SECRET_GUARD}\n")
+            os.chown(agents_md, pw.pw_uid, pw.pw_gid)
             cmd = [
                 _GOSU,
                 self._s.agy_user,
