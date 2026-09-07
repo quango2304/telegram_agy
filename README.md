@@ -145,6 +145,7 @@ make down          # stop the stack
                                    │                     │ HTTP
                             beat (1 replica)        mcp (delivery)
                             hourly cleanup          update_thread_memory
+                            + scheduled dispatch    + schedule_* tools
                                    │                     │
                                    ▼                     ▼
                             ┌─────────────────────────────────┐
@@ -163,8 +164,30 @@ group is `topic_id = 0`; a forum topic is the topic id.
 | `redis` | `redis:7-alpine` | 1 |
 | `bot` | `python -m src.entrypoints.bot` | **exactly 1** |
 | `worker` | `celery … worker -Q replies,maintenance -c 4` | N |
-| `beat` | `celery … beat` | **exactly 1** |
+| `beat` | `celery … beat` (hourly cleanup + per-minute scheduled dispatch) | **exactly 1** |
 | `mcp` | `python -m src.entrypoints.mcp` (uvicorn) | 1 |
+
+## Scheduled tasks
+
+Gen Đần can be told, in plain language, to do something later or on a schedule —
+*"ê mỗi sáng 9h nhắc cả nhóm đi họp"*, *"5 phút nữa nhắc tao uống nước"*. `agy`
+turns that into a call to the **`schedule_task`** MCP tool; `beat` checks for due
+rows every minute and, when one fires, enqueues a normal reply turn for that
+thread whose "message" is the saved instruction — so the bot acts on it exactly
+as if someone had just sent it, with full history and memory in context. A
+scheduled reply is a plain message in the thread (not a Telegram reply to
+anything).
+
+- Times are interpreted in **Asia/Ho_Chi_Minh**.
+- One-off (`when`, an ISO-8601 datetime) **or** recurring (`cron`, a 5-field
+  expression) — exactly one. The prompt tells `agy` the current time so it can
+  resolve "tomorrow", "in 10 minutes", etc.
+- A run missed by more than ~10 minutes (the stack was down) is **skipped**, not
+  replayed; recurring rows roll forward to the next occurrence, one-offs disable.
+- Scheduling is **per thread** (DM, group, or forum topic). The agent lists,
+  edits and cancels its own thread's tasks with **`list_scheduled_tasks`**,
+  **`update_scheduled_task`** and **`cancel_scheduled_task`** (all keyed by the
+  same opaque `session_key` as the memory tool).
 
 ## Stack
 

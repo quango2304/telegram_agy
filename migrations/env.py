@@ -18,6 +18,7 @@ from src.domain.entities.agy_session import AgySession  # noqa: F401
 from src.domain.entities.base import Base
 from src.domain.entities.chat_thread import ChatThread  # noqa: F401
 from src.domain.entities.message import Message  # noqa: F401
+from src.domain.entities.scheduled_task import ScheduledTask  # noqa: F401
 from src.domain.entities.thread_memory import ThreadMemory  # noqa: F401
 
 config = context.config

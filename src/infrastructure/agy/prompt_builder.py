@@ -47,6 +47,7 @@ def build_prompt(
     trigger_name: str,
     trigger_text: str,
     bot_username: str,
+    now_local: str,
     max_chars: int,
     truncate_chars: int,
 ) -> str:
@@ -60,10 +61,13 @@ def build_prompt(
         history_block = "\n".join(lines) if lines else "(chưa có tin nào)"
         return (
             f"{PERSONA_PROMPT}\n\n"
+            f"Bây giờ là {now_local} (giờ Việt Nam).\n"
             f"session_key = {session_key}\n"
             "Nếu bạn học được điều gì đáng nhớ lâu dài về nhóm này hoặc người trong nhóm,\n"
             "hãy gọi tool `update_thread_memory` với session_key ở trên và TOÀN BỘ nội dung\n"
-            "memory mới (tool này GHI ĐÈ, không nối thêm).\n\n"
+            "memory mới (tool này GHI ĐÈ, không nối thêm).\n"
+            "Nếu người ta nhờ làm gì đó vào lúc khác hoặc định kỳ (vd 'mai nhắc...',\n"
+            "'mỗi sáng 9h...'), hãy gọi tool `schedule_task` với session_key ở trên.\n\n"
             f"Ghi nhớ hiện tại về nhóm này:\n{mem}\n\n"
             f"Lịch sử chat gần đây (cũ → mới):\n{history_block}\n\n"
             f'Trả lời tin nhắn này của {trigger_name}: "{trigger_body}"'

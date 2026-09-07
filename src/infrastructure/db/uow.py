@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.domain.interfaces.unit_of_work import IUnitOfWork
 from src.infrastructure.db.repositories.memory_repository_impl import MemoryRepositoryImpl
 from src.infrastructure.db.repositories.message_repository_impl import MessageRepositoryImpl
+from src.infrastructure.db.repositories.schedule_repository_impl import ScheduleRepositoryImpl
 from src.infrastructure.db.repositories.session_repository_impl import SessionRepositoryImpl
 from src.infrastructure.db.repositories.thread_repository_impl import ThreadRepositoryImpl
 
@@ -28,6 +29,7 @@ class SqlAlchemyUnitOfWork(IUnitOfWork):
         self.messages = MessageRepositoryImpl(self._session)
         self.memories = MemoryRepositoryImpl(self._session)
         self.sessions = SessionRepositoryImpl(self._session)
+        self.schedules = ScheduleRepositoryImpl(self._session)
         return self
 
     async def __aexit__(

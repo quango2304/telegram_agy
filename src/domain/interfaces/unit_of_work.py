@@ -8,6 +8,7 @@ from typing import Protocol
 from src.domain.interfaces.repositories import (
     IMemoryRepository,
     IMessageRepository,
+    IScheduleRepository,
     ISessionRepository,
     IThreadRepository,
 )
@@ -18,6 +19,7 @@ class IUnitOfWork(Protocol):
     messages: IMessageRepository
     memories: IMemoryRepository
     sessions: ISessionRepository
+    schedules: IScheduleRepository
 
     async def __aenter__(self) -> IUnitOfWork: ...
 

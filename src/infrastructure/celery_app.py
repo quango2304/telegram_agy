@@ -27,12 +27,19 @@ celery_app.conf.update(
     timezone="UTC",
     task_routes={
         "tasks.generate_reply": {"queue": "replies"},
+        "tasks.run_scheduled": {"queue": "replies"},
+        "tasks.dispatch_scheduled": {"queue": "maintenance"},
         "tasks.cleanup_old_messages": {"queue": "maintenance"},
     },
     beat_schedule={
         "cleanup-hourly": {
             "task": "tasks.cleanup_old_messages",
             "schedule": crontab(minute=0),  # top of every hour, UTC
+            "options": {"queue": "maintenance"},
+        },
+        "dispatch-scheduled-every-minute": {
+            "task": "tasks.dispatch_scheduled",
+            "schedule": crontab(),  # every minute
             "options": {"queue": "maintenance"},
         },
     },

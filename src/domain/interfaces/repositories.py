@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from src.domain.entities.chat_thread import ChatThread
 from src.domain.entities.message import Message
+from src.domain.entities.scheduled_task import ScheduledTask
 from src.domain.entities.thread_memory import ThreadMemory
 
 
@@ -53,3 +55,34 @@ class ISessionRepository(Protocol):
     async def delete(self, session_key: str) -> None: ...
 
     async def purge_expired(self) -> int: ...
+
+
+class IScheduleRepository(Protocol):
+    async def create(
+        self,
+        thread_id: int,
+        instruction: str,
+        run_at: datetime,
+        cron: str | None,
+        created_by: str | None,
+    ) -> ScheduledTask: ...
+
+    async def list_for_thread(self, thread_id: int) -> list[ScheduledTask]: ...
+
+    async def get_by_id(self, task_id: int) -> ScheduledTask | None: ...
+
+    async def get_for_thread(self, thread_id: int, task_id: int) -> ScheduledTask | None: ...
+
+    async def update_fields(
+        self, thread_id: int, task_id: int, **fields: object
+    ) -> ScheduledTask | None: ...
+
+    async def delete(self, thread_id: int, task_id: int) -> bool: ...
+
+    async def due(self, now: datetime, limit: int) -> list[ScheduledTask]:
+        """Enabled tasks whose ``run_at`` has passed, oldest first."""
+        ...
+
+    async def mark_ran(self, task_id: int, ran_at: datetime, next_run_at: datetime | None) -> None:
+        """Record a fire. ``next_run_at`` None disables the task (one-off done)."""
+        ...
