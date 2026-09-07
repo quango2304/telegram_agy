@@ -152,7 +152,12 @@ async def send_chat_message(session_key: str, text: str, reply_to_tg_message_id:
         await uow.sessions.bump_sent_count(session_key, len(sent_ids))
         await uow.commit()
 
-    logger.info("chat message sent", extra={"thread_id": thread_id, "parts": len(sent_ids)})
+    logger.info(
+        "chat message sent thread_id=%s parts=%s reply_to=%s",
+        thread_id,
+        len(sent_ids),
+        reply_to,
+    )
     return "Đã gửi."
 
 
@@ -255,7 +260,12 @@ async def send_chat_file(
 
     _safe_unlink(path)
     with contextlib.suppress(Exception):
-        logger.info("chat file sent", extra={"thread_id": thread_id, "file_name": path.name})
+        logger.info(
+            "chat file sent thread_id=%s file_name=%s reply_to=%s",
+            thread_id,
+            path.name,
+            reply_to,
+        )
     return "Đã gửi file."
 
 
