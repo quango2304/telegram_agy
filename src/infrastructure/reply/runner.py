@@ -94,6 +94,8 @@ async def _run_reply(
             chat_id = thread.chat_id
             topic_id = thread.topic_id
             trigger_tg_id = trigger.tg_message_id
+            trigger_name = trigger.from_name or "ai đó"
+            trigger_text = trigger.text
 
             rows = await uow.messages.last_n(thread_id, settings.context_message_limit)
             history = [HistoryLine(r.from_name or "ai đó", r.text, r.is_bot_self) for r in rows]
@@ -108,6 +110,8 @@ async def _run_reply(
             session_key=session_key,
             memory=memory_text,
             history=history,
+            trigger_name=trigger_name,
+            trigger_text=trigger_text,
             bot_username=settings.telegram_bot_username,
             max_chars=settings.agy_prompt_max_chars,
             truncate_chars=settings.agy_message_truncate_chars,

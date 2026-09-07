@@ -1,9 +1,10 @@
 """Assemble the single argv string handed to ``agy -p``.
 
 Order: persona, session-key + memory-tool instruction, current memory, recent
-chat history (old -> new), then the closing instruction. The whole thing is one
-argv entry, so it is capped: oldest history lines are dropped first, then the
-memory block is truncated.
+chat history (old -> new), then the message this run must answer — named
+explicitly, because rapid triggers mean the trigger is not always the last
+history line. The whole thing is one argv entry, so it is capped: oldest
+history lines are dropped first, then the memory block is truncated.
 """
 
 from __future__ import annotations
@@ -24,12 +25,15 @@ class HistoryLine:
 def _strip_handle(text: str, bot_username: str) -> str:
     if not bot_username:
         return text.strip()
-    return text.replace(f"@{bot_username}", "").replace(f"@{bot_username.lower()}", "").strip()
+    out = text
+    for variant in (f"@{bot_username}", f"@{bot_username.lower()}", f"@{bot_username.upper()}"):
+        out = out.replace(variant, "")
+    return out.strip()
 
 
-def _fmt_line(line: HistoryLine, truncate: int) -> str:
+def _fmt_line(line: HistoryLine, bot_username: str, truncate: int) -> str:
     name = BOT_LABEL if line.is_bot_self else (line.name or "ai đó")
-    body = line.text.strip()
+    body = _strip_handle(line.text, bot_username)
     if len(body) > truncate:
         body = body[:truncate] + "…"
     return f"[{name}]: {body}"
@@ -40,20 +44,17 @@ def build_prompt(
     session_key: str,
     memory: str | None,
     history: Sequence[HistoryLine],
+    trigger_name: str,
+    trigger_text: str,
     bot_username: str,
     max_chars: int,
     truncate_chars: int,
 ) -> str:
     mem_text = (memory or "").strip() or "(chưa có gì)"
-    rendered = [_fmt_line(h, truncate_chars) for h in history]
-    # Strip the bot handle from the final (trigger) line so it doesn't read as
-    # part of the question.
-    if rendered:
-        last = history[-1]
-        rendered[-1] = _fmt_line(
-            HistoryLine(last.name, _strip_handle(last.text, bot_username), last.is_bot_self),
-            truncate_chars,
-        )
+    rendered = [_fmt_line(h, bot_username, truncate_chars) for h in history]
+    trigger_body = _strip_handle(trigger_text, bot_username)
+    if len(trigger_body) > truncate_chars:
+        trigger_body = trigger_body[:truncate_chars] + "…"
 
     def assemble(lines: list[str], mem: str) -> str:
         history_block = "\n".join(lines) if lines else "(chưa có tin nào)"
@@ -65,7 +66,7 @@ def build_prompt(
             "memory mới (tool này GHI ĐÈ, không nối thêm).\n\n"
             f"Ghi nhớ hiện tại về nhóm này:\n{mem}\n\n"
             f"Lịch sử chat gần đây (cũ → mới):\n{history_block}\n\n"
-            "Trả lời tin nhắn cuối cùng."
+            f'Trả lời tin nhắn này của {trigger_name}: "{trigger_body}"'
         )
 
     prompt = assemble(rendered, mem_text)
