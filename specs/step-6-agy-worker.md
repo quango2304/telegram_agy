@@ -91,8 +91,11 @@ the question.
 ## `src/infrastructure/agy/agy_client_impl.py`
 
 ```python
+# Derive the uid — do NOT hardcode 1001 and duplicate the Dockerfile's useradd.
+_pw = pwd.getpwnam(settings.agy_user)
+
 workdir = tempfile.mkdtemp(prefix="agy-")          # fresh & empty per call
-os.chown(workdir, agy_uid, agy_gid)
+os.chown(workdir, _pw.pw_uid, _pw.pw_gid)
 
 cmd = ["gosu", settings.agy_user, settings.agy_binary,
        "-p", prompt,
@@ -117,6 +120,16 @@ proc = await asyncio.create_subprocess_exec(
 - Also wrap in `asyncio.wait_for(..., timeout=agy_timeout_seconds + 30)` — belt and
   braces if the process wedges.
 - Always `shutil.rmtree(workdir, ignore_errors=True)` in a `finally`.
+- **The worker container must run as root** — it needs to `gosu` down to `agy`. Do not
+  add a `USER` directive to `Dockerfile.dev`; the privilege drop happens per-call, in
+  the subprocess.
+- **Cap the total prompt at 60 000 chars.** It is a single argv entry: 20 messages ×
+  2 000 + persona + memory can otherwise add up. Trim oldest messages first, then
+  truncate the memory block. (`ARG_MAX` is far higher, so this is about keeping token
+  cost predictable, not about failing.)
+- `sessions.delete(session_key)` and `rmtree` both belong in the **`finally`**, not
+  only on the happy path. A crashed reply that skips the delete is survivable — the
+  key expires in 10 min and `purge_expired` mops it up — but leaking it is pointless.
 
 ### `SCRUBBED_ENV` — the isolation that was promised
 
