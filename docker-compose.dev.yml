@@ -32,6 +32,7 @@ services:
     volumes:
       - .:/app
       - /app/.venv
+      - agy_outbox:/outbox
     ports: ["8010:8000"]
     depends_on:
       db: {condition: service_healthy}
@@ -59,6 +60,7 @@ services:
     volumes:
       - .:/app
       - /app/.venv
+      - agy_outbox:/outbox
       # VERIFIED: the token file ALONE is enough; agy bootstraps the rest.
       # MUST be read-write — agy rewrites this file when it refreshes.
       - ${HOME}/.gemini/antigravity-cli/antigravity-oauth-token:/home/agy/.gemini/antigravity-cli/antigravity-oauth-token:rw
@@ -84,3 +86,4 @@ services:
 
 volumes:
   postgres_data:
+  agy_outbox:

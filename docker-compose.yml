@@ -37,6 +37,8 @@ services:
   mcp:
     <<: *app
     command: python -m src.entrypoints.mcp
+    volumes:
+      - agy_outbox:/outbox   # files agy drops for send_chat_file
     depends_on:
       db: {condition: service_healthy}
 
@@ -54,6 +56,7 @@ services:
       celery -A src.infrastructure.celery_app:celery_app worker
       -Q replies,maintenance -c 4 -l INFO
     volumes:
+      - agy_outbox:/outbox
       # Token file ALONE is enough; agy bootstraps the rest. MUST be :rw — agy
       # rewrites it on refresh. The entrypoint chowns it to the agy user.
       - ${HOME}/.gemini/antigravity-cli/antigravity-oauth-token:/home/agy/.gemini/antigravity-cli/antigravity-oauth-token:rw
@@ -74,3 +77,4 @@ services:
 
 volumes:
   postgres_data:
+  agy_outbox:

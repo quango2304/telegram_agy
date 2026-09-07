@@ -22,12 +22,18 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/app/.venv/bin:$PATH
 
 RUN apt-get update -qq \
- && apt-get install -y -qq --no-install-recommends curl ca-certificates git gosu \
+ && apt-get install -y -qq --no-install-recommends curl ca-certificates git gosu unzip \
  && rm -rf /var/lib/apt/lists/*
 
 # --- agy CLI --- (linux_arm64 / linux_amd64; -d <dir> is the only supported flag)
 RUN curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- -d /usr/local/bin \
  && agy --help > /dev/null
+
+# --- Composio CLI (optional; only used when COMPOSIO_API_KEY is set) ---
+RUN curl -fsSL https://composio.dev/install | \
+    COMPOSIO_INSTALL_DIR=/opt/composio COMPOSIO_BIN_DIR=/usr/local/bin \
+    COMPOSIO_INSTALL_SHELL=none COMPOSIO_QUIET=1 sh \
+ && composio --help > /dev/null
 
 # Unprivileged user that runs agy. Its HOME holds the bind-mounted OAuth token
 # and the MCP registration; the entrypoint chowns it (native Linux keeps host uid).

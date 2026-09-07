@@ -9,7 +9,7 @@ ENV UV_LINK_MODE=copy \
     PYTHONPATH=/app
 
 RUN apt-get update -qq \
- && apt-get install -y -qq --no-install-recommends curl ca-certificates git gosu \
+ && apt-get install -y -qq --no-install-recommends curl ca-certificates git gosu unzip \
  && rm -rf /var/lib/apt/lists/*
 
 # --- agy CLI -------------------------------------------------------------
@@ -17,6 +17,14 @@ RUN apt-get update -qq \
 # The ONLY supported flag is -d <dir>. --skip-aliases / --skip-path do NOT exist.
 RUN curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- -d /usr/local/bin \
  && agy --help > /dev/null
+
+# --- Composio CLI (optional; only used when COMPOSIO_API_KEY is set) ----
+# Lazy tool access: agy shells out to `composio search|execute` on demand,
+# instead of registering an MCP server that inflates every prompt.
+RUN curl -fsSL https://composio.dev/install | \
+    COMPOSIO_INSTALL_DIR=/opt/composio COMPOSIO_BIN_DIR=/usr/local/bin \
+    COMPOSIO_INSTALL_SHELL=none COMPOSIO_QUIET=1 sh \
+ && composio --help > /dev/null
 
 # Unprivileged user that actually runs agy. Its HOME holds the OAuth token
 # (bind-mounted by compose) and the MCP registration.

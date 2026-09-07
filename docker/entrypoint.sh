@@ -9,25 +9,26 @@ set -euo pipefail
 # in place on refresh, which is why the mount must stay read-write.
 chown -R agy:agy /home/agy 2>/dev/null || true
 
+# Shared outbox volume (mounted in worker + mcp): agy drops files here, the mcp
+# service reads them back to send. agy runs as uid 1001, so it must own it.
+mkdir -p /outbox && chown agy:agy /outbox 2>/dev/null || true
+
 if [ -n "${AGY_MCP_URL:-}" ]; then
   # Writes /home/agy/.gemini/config/mcp_config.json (VERIFIED path).
   # Server name MUST be "memory" — permission rules and docs are name-coupled.
   gosu agy agy mcp add --type http memory "${AGY_MCP_URL}" >/dev/null 2>&1 || true
 fi
 
-# Optional: hand agy the Composio tool catalogue. Enabled purely by the presence
-# of COMPOSIO_API_KEY. Defaults target Composio Connect (consumer key `ck_...`,
-# generic endpoint, `x-consumer-api-key` header); override COMPOSIO_MCP_URL /
-# COMPOSIO_MCP_HEADER for a Platform project server (`ak_...`, `x-api-key`).
-# Best-effort — a failure here must not stop the service from booting.
+# Optional: log the Composio CLI in so agy can shell out to `composio search |
+# execute` on demand (lazy — no per-prompt token cost). Enabled by the presence
+# of COMPOSIO_API_KEY, which must be a `uak_...` user API key (run `composio
+# login` once and copy ~/.composio/user_data.json's api_key). Best-effort.
 if [ -n "${COMPOSIO_API_KEY:-}" ]; then
-  _composio_url="${COMPOSIO_MCP_URL:-https://connect.composio.dev/mcp}"
-  _composio_hdr="${COMPOSIO_MCP_HEADER:-x-consumer-api-key}"
-  if gosu agy agy mcp add --header "${_composio_hdr}: ${COMPOSIO_API_KEY}" \
-       composio "${_composio_url}" >/dev/null 2>&1; then
-    echo "[entrypoint] Composio MCP registered (${_composio_url})"
+  if gosu agy composio login --user-api-key "${COMPOSIO_API_KEY}" \
+       --no-skill-install -y >/dev/null 2>&1; then
+    echo "[entrypoint] Composio CLI logged in"
   else
-    echo "[entrypoint] WARN: could not register Composio MCP (agy mcp add failed)"
+    echo "[entrypoint] WARN: composio login failed — check COMPOSIO_API_KEY is a uak_ key"
   fi
 fi
 

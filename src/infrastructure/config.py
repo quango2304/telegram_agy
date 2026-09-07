@@ -40,18 +40,21 @@ class Settings:
     agy_user: str = "agy"
     agy_mcp_url: str = "http://mcp:8000/mcp"
 
-    # Optional Composio MCP. Registration is done by docker/entrypoint.sh from
-    # the env directly; these are here for typed visibility / the prompt hint.
+    # Optional Composio CLI. docker/entrypoint.sh runs `composio login` with this
+    # (a uak_ user key); here for the prompt hint / visibility.
     composio_api_key: str = ""
-    composio_mcp_url: str = "https://connect.composio.dev/mcp"
-    composio_mcp_header: str = "x-consumer-api-key"
 
     mcp_port: int = 8000
     context_message_limit: int = 20
     session_ttl_seconds: int = 600
     telegram_max_chars: int = 4096
+    telegram_max_file_mb: int = 50  # Bot API send_document ceiling
     agy_prompt_max_chars: int = 60_000
     agy_message_truncate_chars: int = 2_000
+
+    # Shared dir (a named volume mounted in both worker and mcp) where agy drops
+    # files it wants sent; send_chat_file only accepts paths under here.
+    outbox_dir: str = "/outbox"
 
     log_level: str = "INFO"
     log_format: str = "plain"  # plain | json
@@ -82,12 +85,12 @@ def get_settings() -> Settings:
         agy_user=_str("AGY_USER", "agy"),
         agy_mcp_url=_str("AGY_MCP_URL", "http://mcp:8000/mcp"),
         composio_api_key=_str("COMPOSIO_API_KEY"),
-        composio_mcp_url=_str("COMPOSIO_MCP_URL", "https://connect.composio.dev/mcp"),
-        composio_mcp_header=_str("COMPOSIO_MCP_HEADER", "x-consumer-api-key"),
         mcp_port=_int("MCP_PORT", 8000),
         context_message_limit=_int("CONTEXT_MESSAGE_LIMIT", 20),
         session_ttl_seconds=_int("SESSION_TTL_SECONDS", 600),
         telegram_max_chars=_int("TELEGRAM_MAX_CHARS", 4096),
+        telegram_max_file_mb=_int("TELEGRAM_MAX_FILE_MB", 50),
+        outbox_dir=_str("OUTBOX_DIR", "/outbox"),
         agy_prompt_max_chars=_int("AGY_PROMPT_MAX_CHARS", 60_000),
         agy_message_truncate_chars=_int("AGY_MESSAGE_TRUNCATE_CHARS", 2_000),
         log_level=_str("LOG_LEVEL", "INFO"),

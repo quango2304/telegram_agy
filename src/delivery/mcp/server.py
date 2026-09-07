@@ -13,14 +13,18 @@ SDK notes (mcp 2.1.1, verified against the installed package):
 
 from __future__ import annotations
 
+import contextlib
+import os
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from telegram.error import TimedOut as TelegramTimedOut
 
 from src.domain.entities.message import Message
 from src.domain.entities.scheduled_task import ScheduledTask
@@ -135,6 +139,96 @@ async def send_chat_message(session_key: str, text: str) -> str:
 
     logger.info("chat message sent", extra={"thread_id": thread_id, "parts": len(sent_ids)})
     return "Đã gửi."
+
+
+def _resolve_outbox_file(file_path: str) -> Path:
+    """Sync fs checks (kept out of the async tool body for ASYNC240). Returns the
+    validated real path, or raises ToolError."""
+    settings = get_settings()
+    outbox = os.path.realpath(settings.outbox_dir)
+    real = os.path.realpath(file_path)
+    if real == outbox or os.path.commonpath([real, outbox]) != outbox:
+        raise ToolError(f"file_path phải nằm trong {settings.outbox_dir}/.")
+    if not os.path.isfile(real):
+        raise ToolError(f"Không thấy file: {file_path}")
+    size_mb = os.path.getsize(real) / (1024 * 1024)
+    if size_mb > settings.telegram_max_file_mb:
+        raise ToolError(
+            f"File {size_mb:.1f}MB, quá {settings.telegram_max_file_mb}MB Telegram cho phép."
+        )
+    return Path(real)
+
+
+def _safe_unlink(path: Path) -> None:
+    with contextlib.suppress(OSError):
+        path.unlink()
+
+
+@mcp.tool()
+async def send_chat_file(session_key: str, file_path: str, caption: str = "") -> str:
+    """Gửi một FILE vào đúng nhóm/kênh/DM đang xử lý.
+
+    Trước đó hãy tải/ghi file cần gửi vào thư mục /outbox/ (ví dụ tải file từ
+    Google Drive bằng `composio` rồi lưu vào /outbox/ten-file). Chỉ nhận đường
+    dẫn tuyệt đối nằm trong /outbox/. File sẽ bị xoá sau khi gửi xong.
+
+    Args:
+        session_key: khoá phiên được cung cấp trong prompt. Bắt buộc.
+        file_path: đường dẫn tuyệt đối tới file, phải nằm trong /outbox/.
+        caption: (tuỳ chọn) chú thích gửi kèm file.
+    """
+    path = _resolve_outbox_file(file_path)
+
+    async with _uow() as uow:
+        session = await uow.sessions.get_active(session_key)
+        if session is None:
+            raise ToolError("session_key không hợp lệ hoặc đã hết hạn.")
+        thread = await uow.threads.get_by_id(session.thread_id)
+        if thread is None:
+            raise ToolError("Không tìm thấy nhóm cho phiên này.")
+        thread_id = thread.id
+        chat_id = thread.chat_id
+        topic_id = thread.topic_id
+        already_sent = session.sent_count
+        reply_to = session.trigger_tg_message_id if already_sent == 0 else None
+
+    if already_sent >= _MAX_MESSAGES_PER_RUN:
+        raise ToolError("Đã gửi quá nhiều tin trong lượt này, dừng lại.")
+
+    try:
+        sent_id: int | None = await _telegram().send_file(
+            chat_id, path, caption.strip(), topic_id, reply_to
+        )
+    except TelegramTimedOut:
+        # The upload almost always completed; Telegram just didn't ACK in time.
+        # Treat as delivered so agy doesn't retry and double-send.
+        logger.warning("file send timed out (assumed delivered)", extra={"thread_id": thread_id})
+        sent_id = None
+    except Exception as exc:  # noqa: BLE001
+        logger.error("telegram file send failed", extra={"thread_id": thread_id, "err": str(exc)})
+        raise ToolError(f"Gửi file lỗi: {exc}") from exc
+
+    label = f"[file: {path.name}]" + (f" {caption.strip()}" if caption.strip() else "")
+    async with _uow() as uow:
+        if sent_id is not None:
+            await uow.messages.add(
+                Message(
+                    thread_id=thread_id,
+                    tg_message_id=sent_id,
+                    from_user_id=None,
+                    from_username=None,
+                    from_name=None,
+                    is_bot_self=True,
+                    text=label,
+                    sent_at=datetime.now(UTC),
+                )
+            )
+        await uow.sessions.bump_sent_count(session_key, 1)
+        await uow.commit()
+
+    _safe_unlink(path)
+    logger.info("chat file sent", extra={"thread_id": thread_id, "name": path.name})
+    return "Đã gửi file."
 
 
 @mcp.tool()

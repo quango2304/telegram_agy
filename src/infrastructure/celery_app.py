@@ -25,6 +25,11 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,  # don't hoard tasks behind a lock wait
     task_track_started=True,
     timezone="UTC",
+    # Backstop: if agy (or a wedged composio child) escapes the in-process
+    # timeout, the soft limit raises inside the task so its finally-blocks run,
+    # and the hard limit SIGKILLs the pool child.
+    task_soft_time_limit=_settings.agy_timeout_seconds + 120,
+    task_time_limit=_settings.agy_timeout_seconds + 180,
     task_routes={
         "tasks.generate_reply": {"queue": "replies"},
         "tasks.run_scheduled": {"queue": "replies"},

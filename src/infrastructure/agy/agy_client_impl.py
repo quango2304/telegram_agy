@@ -9,10 +9,12 @@ string; ``status != "SUCCESS"`` or a non-empty ``denied_actions`` is a failure;
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import pwd
 import shutil
+import signal
 import tempfile
 from dataclasses import dataclass, field
 from typing import Any
@@ -36,6 +38,8 @@ SCRUBBED_ENV = {
     "USER": "agy",
     "LANG": "C.UTF-8",
     "TERM": "dumb",
+    # Shared dir for files agy wants sent to chat (see send_chat_file).
+    "AGY_OUTBOX": "/outbox",
 }
 
 
@@ -44,6 +48,17 @@ class AgyResult:
     ok: bool
     text: str
     raw: dict[str, Any] = field(default_factory=dict)
+
+
+def _kill_group(proc: asyncio.subprocess.Process) -> None:
+    """SIGKILL the whole process group. agy is started as a session leader, so
+    its group id is its pid; this also reaps whatever composio / curl left
+    running (which would otherwise hold the stdout pipe open and hang
+    communicate() forever)."""
+    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        proc.kill()
 
 
 class AgyClient:
@@ -58,6 +73,7 @@ class AgyClient:
             return AgyResult(ok=False, text="", raw={"error": "no_agy_user"})
 
         workdir = tempfile.mkdtemp(prefix="agy-")
+        proc: asyncio.subprocess.Process | None = None
         try:
             os.chown(workdir, pw.pw_uid, pw.pw_gid)
             cmd = [
@@ -80,14 +96,16 @@ class AgyClient:
                 env=SCRUBBED_ENV,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,  # own process group -> _kill_group reaps children
             )
             try:
                 out, err = await asyncio.wait_for(
                     proc.communicate(), timeout=self._s.agy_timeout_seconds + 30
                 )
             except TimeoutError:
-                proc.kill()
-                await proc.wait()
+                _kill_group(proc)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(proc.wait(), timeout=5)
                 logger.error("agy timed out")
                 return AgyResult(ok=False, text="", raw={"error": "timeout"})
 
@@ -113,4 +131,8 @@ class AgyClient:
                 logger.error("agy call unsuccessful", extra={"agy": json.dumps(data)[:2000]})
             return AgyResult(ok=ok, text=(data.get("response") or "").strip(), raw=data)
         finally:
+            # Always nuke the group: even on the happy path composio can leave a
+            # tooling server / subagent alive.
+            if proc is not None:
+                _kill_group(proc)
             shutil.rmtree(workdir, ignore_errors=True)

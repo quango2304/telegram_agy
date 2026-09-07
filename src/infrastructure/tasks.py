@@ -14,11 +14,18 @@ from src.shared.logger import get_logger
 logger = get_logger(__name__)
 
 
+# Retries here are the "another reply for this thread is already running" wait
+# (Redis lock held). A single reply can legitimately run for minutes (agy +
+# composio), so the budget must outlast one full run + the lock's TTL:
+# 120 x 5s = 600s.
+_LOCK_WAIT_RETRIES = 120
+
+
 @celery_app.task(
     bind=True,
     name="tasks.generate_reply",
-    max_retries=20,
-    default_retry_delay=3,
+    max_retries=_LOCK_WAIT_RETRIES,
+    default_retry_delay=5,
 )
 def generate_reply(self, message_id: int) -> None:  # noqa: ANN001
     from src.infrastructure.reply.runner import run_generate_reply
@@ -29,8 +36,8 @@ def generate_reply(self, message_id: int) -> None:  # noqa: ANN001
 @celery_app.task(
     bind=True,
     name="tasks.run_scheduled",
-    max_retries=20,
-    default_retry_delay=3,
+    max_retries=_LOCK_WAIT_RETRIES,
+    default_retry_delay=5,
 )
 def run_scheduled(self, scheduled_task_id: int) -> None:  # noqa: ANN001
     from src.infrastructure.reply.runner import run_scheduled_reply

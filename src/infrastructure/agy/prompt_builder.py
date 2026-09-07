@@ -54,8 +54,14 @@ def build_prompt(
 ) -> str:
     mem_text = (memory or "").strip() or "(chưa có gì)"
     extra_tools_line = (
-        "Bạn còn có thể có tool ngoài (Composio: tìm kiếm web, Gmail, Slack, Notion...) "
-        "— cứ dùng khi thật sự cần để trả lời cho đúng.\n"
+        "CÔNG CỤ NGOÀI: bạn có CLI `composio` (đã đăng nhập sẵn) để thao tác Google "
+        "Drive, Gmail, tìm kiếm web, v.v. Nếu người ta nhờ việc cần công cụ này thì "
+        'PHẢI làm thật: chạy `composio search "<việc>"` tìm tool, '
+        "`composio execute <TOOL_SLUG> --get-schema` xem input, rồi "
+        "`composio execute <TOOL_SLUG> -d '{...}'` để chạy (kết quả download thường là "
+        "một s3url — dùng `curl -sL '<url>' -o /outbox/<tên-file>` để lấy về). "
+        "Gửi file cho người dùng: đặt file vào /outbox/ rồi gọi tool `send_chat_file` "
+        "ĐÚNG MỘT LẦN cho mỗi file.\n"
         if extra_tools
         else ""
     )
@@ -81,7 +87,10 @@ def build_prompt(
             "cho cả nhóm, mọi topic).\n"
             "Nếu người ta nhờ làm gì đó vào lúc khác hoặc định kỳ (vd 'mai nhắc...',\n"
             "'mỗi sáng 9h...'), hãy gọi tool `schedule_task` với session_key ở trên.\n"
-            f"{extra_tools_line}\n"
+            f"{extra_tools_line}"
+            "Người ta nhờ việc cụ thể (tìm file, tra cứu, gửi file, đặt lịch...) thì "
+            "LÀM cho xong đã, xong rồi muốn cà khịa gì thì cà — đừng né việc để đi "
+            "chọc ngoáy.\n\n"
             f"Ghi nhớ hiện tại về nhóm này:\n{mem}\n\n"
             f"Lịch sử chat gần đây (cũ → mới):\n{history_block}\n\n"
             f"Trả lời tin nhắn này của {trigger_name} (nhớ gọi `send_chat_message`): "

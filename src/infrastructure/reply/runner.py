@@ -76,12 +76,15 @@ async def _dispatch(task: Any, *, message_kind: str, ref_id: int) -> None:
 
         lock = redis_client.lock(
             f"lock:thread:{ctx.thread_id}",
-            timeout=settings.agy_timeout_seconds + 60,
+            # Outlast a full run incl. the Celery hard time limit
+            # (agy_timeout + 180), so a SIGKILLed task can't leave the lock
+            # expiring mid-run and let a second reply race in.
+            timeout=settings.agy_timeout_seconds + 240,
             blocking=False,
         )
         if not lock.acquire(blocking=False):
             # Another reply for this thread is in flight — normal path, not an error.
-            raise task.retry(countdown=3)
+            raise task.retry(countdown=5)
 
         try:
             await _run_reply(settings, uow_factory, ctx)
