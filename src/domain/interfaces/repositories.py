@@ -14,11 +14,15 @@ class IThreadRepository(Protocol):
         self, chat_id: int, topic_id: int, chat_type: str, title: str | None
     ) -> ChatThread: ...
 
+    async def get_by_id(self, thread_id: int) -> ChatThread | None: ...
+
 
 class IMessageRepository(Protocol):
     async def add(self, msg: Message) -> Message:
         """Idempotent upsert on ``(thread_id, tg_message_id)``."""
         ...
+
+    async def get_by_id(self, message_id: int) -> Message | None: ...
 
     async def update_text(self, thread_id: int, tg_message_id: int, new_text: str) -> None:
         """Edited-message path: refresh ``text`` for an existing row."""

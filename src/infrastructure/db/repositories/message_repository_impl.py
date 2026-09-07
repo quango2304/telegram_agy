@@ -53,6 +53,9 @@ class MessageRepositoryImpl(IMessageRepository):
             )
         ).scalar_one()
 
+    async def get_by_id(self, message_id: int) -> Message | None:
+        return await self._session.get(Message, message_id)
+
     async def update_text(self, thread_id: int, tg_message_id: int, new_text: str) -> None:
         await self._session.execute(
             update(Message)

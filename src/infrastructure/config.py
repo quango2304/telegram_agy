@@ -28,6 +28,7 @@ def _int(key: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     telegram_bot_token: str
+    telegram_bot_username: str  # without the leading @, used to strip mentions
     database_url: str
     celery_broker_url: str
     celery_result_backend: str
@@ -64,6 +65,7 @@ def get_settings() -> Settings:
 
     return Settings(
         telegram_bot_token=token,
+        telegram_bot_username=_str("TELEGRAM_BOT_USERNAME").lstrip("@"),
         database_url=database_url,
         celery_broker_url=_str("CELERY_BROKER_URL", "redis://redis:6379/0"),
         celery_result_backend=_str("CELERY_RESULT_BACKEND", "redis://redis:6379/1"),

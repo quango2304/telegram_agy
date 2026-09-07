@@ -26,3 +26,6 @@ class ThreadRepositoryImpl(IThreadRepository):
             .returning(ChatThread)
         )
         return (await self._session.execute(stmt)).scalar_one()
+
+    async def get_by_id(self, thread_id: int) -> ChatThread | None:
+        return await self._session.get(ChatThread, thread_id)
