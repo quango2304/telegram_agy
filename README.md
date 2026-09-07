@@ -86,11 +86,11 @@ docker compose -f docker-compose.dev.yml up --scale worker=3
 ## 6. Retention
 
 An hourly job keeps only the **newest 20 messages per chat thread**
-(`CONTEXT_MESSAGE_LIMIT`). `chat_threads` rows and the per-thread
-`thread_memories` row are **never** deleted. That memory row is therefore the only
-long-term recall: anything Gen Đần should remember beyond ~20 messages must have
-been written to memory (via the `update_thread_memory` MCP tool) before cleanup
-runs. This is by design.
+(`CONTEXT_MESSAGE_LIMIT`). `chat_threads` rows and `chat_memories` are **never**
+deleted. Memory is **per chat** — one row for a private chat, one shared across
+every forum topic of a group — and is the only long-term recall: anything Gen
+Đần should remember beyond ~20 messages must have been written via the
+`update_memory` MCP tool before cleanup runs. This is by design.
 
 ## 7. Security — stated plainly
 
@@ -147,7 +147,7 @@ make down          # stop the stack
                                    │                     │ HTTP tool calls
                             beat (1 replica)        mcp (delivery, holds the bot token)
                             hourly cleanup          send_chat_message  ──▶ Telegram
-                            + scheduled dispatch    update_thread_memory
+                            + scheduled dispatch    update_memory (per chat)
                                    │                schedule_* tools
                                    ▼                     │
                             ┌─────────────────────────────────┐

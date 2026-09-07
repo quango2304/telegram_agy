@@ -138,12 +138,14 @@ async def send_chat_message(session_key: str, text: str) -> str:
 
 
 @mcp.tool()
-async def update_thread_memory(session_key: str, memory: str) -> str:
-    """Lưu ghi nhớ lâu dài về nhóm chat hiện tại.
+async def update_memory(session_key: str, memory: str) -> str:
+    """Lưu ghi nhớ lâu dài cho cuộc trò chuyện hiện tại.
 
-    Gọi tool này khi bạn biết được điều gì đáng nhớ về nhóm hoặc về người trong
-    nhóm (tên gọi, sở thích, cách xưng hô, quy ước riêng, việc đang làm...).
-    Nội dung sẽ GHI ĐÈ toàn bộ ghi nhớ cũ, nên hãy gửi bản đầy đủ đã gộp.
+    Với chat riêng thì là ghi nhớ về người đó; với group/supergroup thì là MỘT
+    ghi nhớ chung cho cả nhóm (dùng chung cho mọi topic trong nhóm). Gọi khi bạn
+    biết được điều gì đáng nhớ (tên gọi, sở thích, cách xưng hô, quy ước riêng,
+    việc đang làm...). Nội dung sẽ GHI ĐÈ toàn bộ ghi nhớ cũ, nên hãy gửi bản
+    đầy đủ đã gộp.
 
     Args:
         session_key: khoá phiên được cung cấp trong prompt. Bắt buộc.
@@ -153,9 +155,12 @@ async def update_thread_memory(session_key: str, memory: str) -> str:
         thread_id = await uow.sessions.resolve(session_key)
         if thread_id is None:
             raise ToolError("session_key không hợp lệ hoặc đã hết hạn.")
-        await uow.memories.upsert(thread_id, memory.strip()[:8000])
+        thread = await uow.threads.get_by_id(thread_id)
+        if thread is None:
+            raise ToolError("Không tìm thấy cuộc trò chuyện cho phiên này.")
+        await uow.memories.upsert(thread.chat_id, memory.strip()[:8000])
         await uow.commit()
-    logger.info("memory updated", extra={"thread_id": thread_id})
+    logger.info("memory updated", extra={"chat_id": thread.chat_id})
     return "Đã lưu ghi nhớ."
 
 

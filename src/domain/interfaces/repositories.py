@@ -6,10 +6,10 @@ from datetime import datetime
 from typing import Protocol
 
 from src.domain.entities.agy_session import AgySession
+from src.domain.entities.chat_memory import ChatMemory
 from src.domain.entities.chat_thread import ChatThread
 from src.domain.entities.message import Message
 from src.domain.entities.scheduled_task import ScheduledTask
-from src.domain.entities.thread_memory import ThreadMemory
 
 
 class IThreadRepository(Protocol):
@@ -41,9 +41,9 @@ class IMessageRepository(Protocol):
 
 
 class IMemoryRepository(Protocol):
-    async def get(self, thread_id: int) -> ThreadMemory | None: ...
+    async def get(self, chat_id: int) -> ChatMemory | None: ...
 
-    async def upsert(self, thread_id: int, content: str) -> ThreadMemory: ...
+    async def upsert(self, chat_id: int, content: str) -> ChatMemory: ...
 
 
 class ISessionRepository(Protocol):

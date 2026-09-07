@@ -1,8 +1,8 @@
 """Hourly retention job — keep only the newest N messages per thread.
 
 One ``DELETE ... USING`` with a window function covers every thread at once (do
-not loop in Python). ``chat_threads`` and ``thread_memories`` are never touched —
-the memory row is the only long-term state.
+not loop in Python). ``chat_threads`` and ``chat_memories`` are never touched —
+the per-chat memory row is the only long-term state.
 """
 
 from __future__ import annotations

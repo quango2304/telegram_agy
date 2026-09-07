@@ -1,4 +1,4 @@
-"""The ``mcp`` service: HTTP MCP server exposing ``update_thread_memory``."""
+"""The ``mcp`` service: HTTP MCP server exposing the send / memory / schedule tools."""
 
 from __future__ import annotations
 

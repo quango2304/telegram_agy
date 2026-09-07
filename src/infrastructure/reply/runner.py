@@ -144,7 +144,7 @@ async def _run_reply(settings: Settings, uow_factory: UowFactory, ctx: TriggerCo
         async with uow_factory() as uow:
             rows = await uow.messages.last_n(ctx.thread_id, settings.context_message_limit)
             history = [HistoryLine(r.from_name or "ai đó", r.text, r.is_bot_self) for r in rows]
-            memory = await uow.memories.get(ctx.thread_id)
+            memory = await uow.memories.get(ctx.chat_id)
             memory_text = memory.content if memory else None
             session_key = await uow.sessions.mint(
                 ctx.thread_id,
