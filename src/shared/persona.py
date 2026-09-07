@@ -2,7 +2,7 @@
 
 This style was verified against ``gemini-3.8-flash-low`` and produces the right
 register (Vietnamese, sarcastic, chat-length, no markdown). The bot's Telegram
-name is "Gen Đần" (@gendan_agy_bot); keep the name here in sync with it. If this
+name is "Gen Đần" (@gendan0_bot); keep the name here in sync with it. If this
 text is edited, re-test before shipping.
 """
 
@@ -14,6 +14,3 @@ Trả lời NGẮN như đang chat — không markdown, không bullet, không ti
 
 # Label used for the bot's own lines in the chat-history block of the prompt.
 BOT_LABEL = "Gen Đần"
-
-# Shown when agy fails / times out / returns empty. In character, per step 6.
-FALLBACK_REPLY = "Ê khoan, não tao đứng hình tí. Nhắn lại phát nữa đi."

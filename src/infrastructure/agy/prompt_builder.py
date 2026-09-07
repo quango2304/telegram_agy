@@ -62,7 +62,12 @@ def build_prompt(
         return (
             f"{PERSONA_PROMPT}\n\n"
             f"Bây giờ là {now_local} (giờ Việt Nam).\n"
-            f"session_key = {session_key}\n"
+            f"session_key = {session_key}\n\n"
+            "CÁCH TRẢ LỜI: bạn KHÔNG nói chuyện trực tiếp với người dùng. Muốn nhắn gì\n"
+            "vào nhóm thì phải gọi tool `send_chat_message` với session_key ở trên.\n"
+            "Được gọi nhiều lần để nhắn thành nhiều tin — ví dụ nhắn 'chờ tao xíu'\n"
+            "trước, làm xong rồi nhắn kết quả. Chữ bạn viết ra ngoài tool sẽ KHÔNG ai\n"
+            "thấy, nên nếu không gọi tool thì coi như bạn im lặng.\n\n"
             "Nếu bạn học được điều gì đáng nhớ lâu dài về nhóm này hoặc người trong nhóm,\n"
             "hãy gọi tool `update_thread_memory` với session_key ở trên và TOÀN BỘ nội dung\n"
             "memory mới (tool này GHI ĐÈ, không nối thêm).\n"
@@ -70,7 +75,8 @@ def build_prompt(
             "'mỗi sáng 9h...'), hãy gọi tool `schedule_task` với session_key ở trên.\n\n"
             f"Ghi nhớ hiện tại về nhóm này:\n{mem}\n\n"
             f"Lịch sử chat gần đây (cũ → mới):\n{history_block}\n\n"
-            f'Trả lời tin nhắn này của {trigger_name}: "{trigger_body}"'
+            f"Trả lời tin nhắn này của {trigger_name} (nhớ gọi `send_chat_message`): "
+            f'"{trigger_body}"'
         )
 
     prompt = assemble(rendered, mem_text)

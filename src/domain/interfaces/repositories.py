@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
+from src.domain.entities.agy_session import AgySession
 from src.domain.entities.chat_thread import ChatThread
 from src.domain.entities.message import Message
 from src.domain.entities.scheduled_task import ScheduledTask
@@ -46,10 +47,23 @@ class IMemoryRepository(Protocol):
 
 
 class ISessionRepository(Protocol):
-    async def mint(self, thread_id: int, ttl_seconds: int) -> str: ...
+    async def mint(
+        self,
+        thread_id: int,
+        ttl_seconds: int,
+        trigger_tg_message_id: int | None = None,
+    ) -> str: ...
 
     async def resolve(self, session_key: str) -> int | None:
         """Thread id, or ``None`` if the key is unknown or expired."""
+        ...
+
+    async def get_active(self, session_key: str) -> AgySession | None:
+        """The full unexpired row, or ``None``."""
+        ...
+
+    async def bump_sent_count(self, session_key: str, by: int) -> int:
+        """Add ``by`` to ``sent_count``; return the new total."""
         ...
 
     async def delete(self, session_key: str) -> None: ...

@@ -5,13 +5,19 @@ there is no transport-level way to tell the MCP server which thread a run belong
 to — and the model must not be trusted to echo a raw ``chat_id`` back. Each run
 gets a short-lived opaque key instead, embedded in the prompt and resolved
 server-side.
+
+The run also *replies through* this row: ``agy`` calls the ``send_chat_message``
+MCP tool with the key, and the server sends into the thread. ``trigger_tg_message_id``
+lets the tool make the run's first message a reply to the message that triggered
+it; ``sent_count`` tracks how many the run has sent (first-message detection + a
+runaway cap).
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.domain.entities.base import Base
@@ -26,3 +32,5 @@ class AgySession(Base):
         BigInteger, ForeignKey("chat_threads.id", ondelete="CASCADE"), nullable=False
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    trigger_tg_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    sent_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

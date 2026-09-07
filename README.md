@@ -118,6 +118,8 @@ groups, and do not publish the MCP port (`8010`) anywhere but local dev.
 | MCP calls fail with `421 Misdirected Request` | `TransportSecuritySettings.allowed_hosts` doesn't list `mcp` / `mcp:*`. |
 | MCP server raises `RuntimeError: Task group is not initialized` | The Starlette app isn't running `mcp.session_manager.run()` in its lifespan. Use the app returned by `streamable_http_app()` directly (it wires its own lifespan). |
 | `bot` container exits immediately | `TELEGRAM_BOT_TOKEN` is empty or wrong in `.env`. |
+| Trigger handled (worker logs `reply sent` / `agy_ok`) but nothing appears in the chat | `agy` answered in plain text instead of calling `send_chat_message`. Look for `agy called no send tool` in the worker log. By design there is no fallback; tighten the persona/prompt if the model does this often. |
+| `send_chat_message` fails with a Telegram error | the `mcp` service is missing `TELEGRAM_BOT_TOKEN`, or the bot was removed from the chat. |
 | DB errors on first boot | Run `make migrate` once; migrations normally auto-apply from the `bot` entrypoint, but a hand-run is the fix if that service didn't come up. |
 
 Useful commands:
@@ -142,12 +144,12 @@ make down          # stop the stack
                             redis  ◀────────▶  worker (N replicas) + agy
                             broker + lock            fetches last 20 at run time
                                    ▲                     │ subprocess (user: agy)
-                                   │                     │ HTTP
-                            beat (1 replica)        mcp (delivery)
-                            hourly cleanup          update_thread_memory
-                            + scheduled dispatch    + schedule_* tools
-                                   │                     │
-                                   ▼                     ▼
+                                   │                     │ HTTP tool calls
+                            beat (1 replica)        mcp (delivery, holds the bot token)
+                            hourly cleanup          send_chat_message  ──▶ Telegram
+                            + scheduled dispatch    update_thread_memory
+                                   │                schedule_* tools
+                                   ▼                     │
                             ┌─────────────────────────────────┐
                             │            postgres              │
                             └─────────────────────────────────┘
@@ -155,6 +157,18 @@ make down          # stop the stack
 
 The unit of everything is a **chat thread** = `(chat_id, topic_id)`. A DM or plain
 group is `topic_id = 0`; a forum topic is the topic id.
+
+### How a reply happens
+
+The worker does **not** send anything to Telegram. It takes the per-thread lock,
+builds the prompt, and runs `agy`; `agy` then calls the **`send_chat_message`**
+MCP tool — once, or several times for a "chờ tí… xong rồi, đây" flow — and the
+`mcp` service (which holds the bot token) does the actual sending, replies the
+first message to the trigger, and stores each one as `is_bot_self`. A runaway
+guard caps a single run at 12 messages.
+
+Consequence, chosen deliberately: **if `agy` fails or never calls the tool, the
+thread stays silent.** There is no worker-side fallback message.
 
 ### Services (all from one image except `db` / `redis`)
 
@@ -165,7 +179,7 @@ group is `topic_id = 0`; a forum topic is the topic id.
 | `bot` | `python -m src.entrypoints.bot` | **exactly 1** |
 | `worker` | `celery … worker -Q replies,maintenance -c 4` | N |
 | `beat` | `celery … beat` (hourly cleanup + per-minute scheduled dispatch) | **exactly 1** |
-| `mcp` | `python -m src.entrypoints.mcp` (uvicorn) | 1 |
+| `mcp` | `python -m src.entrypoints.mcp` (uvicorn; sends chat messages, so it needs `TELEGRAM_BOT_TOKEN`) | 1 |
 
 ## Scheduled tasks
 

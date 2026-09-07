@@ -1,4 +1,5 @@
-"""MCP memory server — one tool so ``agy`` can persist a durable per-thread note.
+"""MCP server for ``agy``: send chat messages, persist per-thread memory, and
+schedule per-thread tasks — all keyed by the opaque per-run ``session_key``.
 
 SDK notes (mcp 2.1.1, verified against the installed package):
 - ``FastMCP`` is now ``MCPServer`` (``from mcp.server import MCPServer``).
@@ -21,6 +22,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from src.domain.entities.message import Message
 from src.domain.entities.scheduled_task import ScheduledTask
 from src.domain.interfaces.unit_of_work import IUnitOfWork
 from src.infrastructure.config import get_settings
@@ -33,13 +35,19 @@ from src.infrastructure.schedule.cron import (
     to_local_str,
     validate_cron,
 )
+from src.infrastructure.telegram.sender import TelegramSender
+from src.shared.chunking import split_message
 from src.shared.logger import get_logger
 
 logger = get_logger(__name__)
 
 mcp = MCPServer("memory")
 
+# One run may send at most this many chat messages (runaway-loop guard).
+_MAX_MESSAGES_PER_RUN = 12
+
 _uow_factory: Callable[[], IUnitOfWork] | None = None
+_sender: TelegramSender | None = None
 
 
 def _uow() -> IUnitOfWork:
@@ -51,9 +59,82 @@ def _uow() -> IUnitOfWork:
     return _uow_factory()
 
 
+def _telegram() -> TelegramSender:
+    global _sender
+    if _sender is None:
+        _sender = TelegramSender(get_settings().telegram_bot_token)
+    return _sender
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health(_request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
+
+
+@mcp.tool()
+async def send_chat_message(session_key: str, text: str) -> str:
+    """Gửi một tin nhắn vào đúng nhóm/kênh/DM đang xử lý.
+
+    ĐÂY là cách duy nhất để nói với người dùng — chữ bạn viết ngoài tool không ai
+    thấy. Gọi được nhiều lần trong một lượt để nhắn thành nhiều tin: ví dụ nhắn
+    "chờ tao xíu" trước, làm xong rồi gọi lại để nhắn kết quả. Tin quá dài sẽ tự
+    được cắt nhỏ.
+
+    Args:
+        session_key: khoá phiên được cung cấp trong prompt. Bắt buộc.
+        text: nội dung tin nhắn.
+    """
+    text = text.strip()
+    if not text:
+        raise ToolError("Tin nhắn rỗng.")
+
+    async with _uow() as uow:
+        session = await uow.sessions.get_active(session_key)
+        if session is None:
+            raise ToolError("session_key không hợp lệ hoặc đã hết hạn.")
+        thread = await uow.threads.get_by_id(session.thread_id)
+        if thread is None:
+            raise ToolError("Không tìm thấy nhóm cho phiên này.")
+        thread_id = thread.id
+        chat_id = thread.chat_id
+        topic_id = thread.topic_id
+        already_sent = session.sent_count
+        reply_to = session.trigger_tg_message_id if already_sent == 0 else None
+
+    if already_sent >= _MAX_MESSAGES_PER_RUN:
+        raise ToolError("Đã gửi quá nhiều tin trong lượt này, dừng lại.")
+
+    chunks = split_message(text, get_settings().telegram_max_chars)
+    sender = _telegram()
+    sent_ids: list[int] = []
+    for i, chunk in enumerate(chunks):
+        try:
+            sent_ids.append(
+                await sender.send_reply(chat_id, chunk, topic_id, reply_to if i == 0 else None)
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("telegram send failed", extra={"thread_id": thread_id, "err": str(exc)})
+            raise ToolError(f"Gửi Telegram lỗi: {exc}") from exc
+
+    async with _uow() as uow:
+        for sent_id, chunk in zip(sent_ids, chunks, strict=True):
+            await uow.messages.add(
+                Message(
+                    thread_id=thread_id,
+                    tg_message_id=sent_id,
+                    from_user_id=None,
+                    from_username=None,
+                    from_name=None,
+                    is_bot_self=True,
+                    text=chunk,
+                    sent_at=datetime.now(UTC),
+                )
+            )
+        await uow.sessions.bump_sent_count(session_key, len(sent_ids))
+        await uow.commit()
+
+    logger.info("chat message sent", extra={"thread_id": thread_id, "parts": len(sent_ids)})
+    return "Đã gửi."
 
 
 @mcp.tool()

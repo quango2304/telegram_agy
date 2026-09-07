@@ -1,10 +1,12 @@
-"""The reply worker: per-thread Redis lock, prompt, ``agy``, send, store.
+"""The reply worker: per-thread Redis lock, prompt, run ``agy``.
 
-Two entry points share one body:
+``agy`` sends the actual chat messages itself, through the ``send_chat_message``
+MCP tool — this module only takes the lock, builds the prompt, runs the CLI, and
+cleans up. Two entry points share one body:
 - ``run_generate_reply`` — a real Telegram trigger (mention / reply / DM).
 - ``run_scheduled_reply`` — a due ``scheduled_tasks`` row; the saved instruction
-  plays the part of the trigger message, and the reply is not a Telegram reply
-  to anything (``trigger_tg_id`` is ``None``).
+  plays the part of the trigger message, and the first sent message is not a
+  Telegram reply to anything (``trigger_tg_id`` is ``None``).
 
 Sync/async bridge: the Celery task body is sync, everything it needs is async.
 We ``asyncio.run`` once per task and build the engine *inside that loop* — an
@@ -24,7 +26,6 @@ from typing import Any
 import redis
 from redis.exceptions import LockError
 
-from src.domain.entities.message import Message
 from src.domain.interfaces.unit_of_work import IUnitOfWork
 from src.infrastructure.agy.agy_client_impl import AgyClient
 from src.infrastructure.agy.prompt_builder import HistoryLine, build_prompt
@@ -33,9 +34,7 @@ from src.infrastructure.db.engine import build_engine, build_session_factory
 from src.infrastructure.db.uow import SqlAlchemyUnitOfWork
 from src.infrastructure.schedule.cron import to_local_str
 from src.infrastructure.telegram.sender import TelegramSender
-from src.shared.chunking import split_message
 from src.shared.logger import get_logger
-from src.shared.persona import FALLBACK_REPLY
 
 logger = get_logger(__name__)
 
@@ -134,6 +133,10 @@ async def _resolve_context(
 
 
 async def _run_reply(settings: Settings, uow_factory: UowFactory, ctx: TriggerContext) -> None:
+    """Run ``agy``; ``agy`` itself sends every message via the ``send_chat_message``
+    MCP tool (see src/delivery/mcp/server.py). This function never sends to Telegram
+    except the initial typing action — if ``agy`` fails or calls no tool, the thread
+    stays silent by design."""
     sender = TelegramSender(settings.telegram_bot_token)
     agy = AgyClient(settings)
     session_key: str | None = None
@@ -143,7 +146,11 @@ async def _run_reply(settings: Settings, uow_factory: UowFactory, ctx: TriggerCo
             history = [HistoryLine(r.from_name or "ai đó", r.text, r.is_bot_self) for r in rows]
             memory = await uow.memories.get(ctx.thread_id)
             memory_text = memory.content if memory else None
-            session_key = await uow.sessions.mint(ctx.thread_id, settings.session_ttl_seconds)
+            session_key = await uow.sessions.mint(
+                ctx.thread_id,
+                settings.session_ttl_seconds,
+                trigger_tg_message_id=ctx.trigger_tg_id,
+            )
             await uow.commit()
 
         await sender.send_typing(ctx.chat_id, ctx.topic_id)
@@ -161,30 +168,19 @@ async def _run_reply(settings: Settings, uow_factory: UowFactory, ctx: TriggerCo
         )
 
         result = await agy.run(prompt)
-        reply_text = result.text if (result.ok and result.text) else FALLBACK_REPLY
 
-        chunks = split_message(reply_text, settings.telegram_max_chars) or [FALLBACK_REPLY]
         async with uow_factory() as uow:
-            for i, chunk in enumerate(chunks):
-                reply_to = ctx.trigger_tg_id if (i == 0 and ctx.trigger_tg_id) else None
-                sent_id = await sender.send_reply(ctx.chat_id, chunk, ctx.topic_id, reply_to)
-                await uow.messages.add(
-                    Message(
-                        thread_id=ctx.thread_id,
-                        tg_message_id=sent_id,
-                        from_user_id=None,
-                        from_username=None,
-                        from_name=None,
-                        is_bot_self=True,
-                        text=chunk,
-                        sent_at=datetime.now(UTC),
-                    )
-                )
-            await uow.commit()
-        logger.info(
-            "reply sent",
-            extra={"thread_id": ctx.thread_id, "chunks": len(chunks), "agy_ok": result.ok},
-        )
+            active = await uow.sessions.get_active(session_key)
+            sent = active.sent_count if active is not None else 0
+        if not result.ok:
+            logger.error("agy failed; thread left silent", extra={"thread_id": ctx.thread_id})
+        elif sent == 0:
+            logger.warning(
+                "agy called no send tool; thread left silent",
+                extra={"thread_id": ctx.thread_id},
+            )
+        else:
+            logger.info("reply sent", extra={"thread_id": ctx.thread_id, "messages": sent})
     finally:
         if session_key is not None:
             try:
