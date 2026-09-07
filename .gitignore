@@ -8,3 +8,7 @@ __pycache__/
 
 # celery beat local schedule db (compose writes it to /tmp inside the container)
 celerybeat-schedule*
+
+# editor / local tooling
+.idea/
+.mcp.json
