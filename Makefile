@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose -f docker-compose.dev.yml
+PROD := docker compose -f docker-compose.yml
 AGY_TOKEN := $(HOME)/.gemini/antigravity-cli/antigravity-oauth-token
 
 help:            ## Show this help
@@ -39,4 +40,19 @@ verify:          ## Lint, format-check, typecheck, compile
 fmt:             ## Auto-fix and format
 	uv run ruff check --fix . && uv run ruff format .
 
-.PHONY: help check-auth dev down logs ps shell gen-migration migrate verify fmt
+# --- production (VPS: build on the box) -------------------------------------
+prod: check-auth ## Build and (re)start the prod stack, detached
+	@test -f .env || { echo "ERROR: create .env first (cp .env.example .env, then fill it)"; exit 1; }
+	$(PROD) up -d --build
+
+prod-down:       ## Stop the prod stack
+	$(PROD) down
+
+prod-logs:       ## Tail prod logs
+	$(PROD) logs -f
+
+prod-ps:         ## Prod service status
+	$(PROD) ps
+
+.PHONY: help check-auth dev down logs ps shell gen-migration migrate verify fmt \
+        prod prod-down prod-logs prod-ps

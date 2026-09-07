@@ -1,0 +1,76 @@
+# Production stack (VPS). Build on the box: `make prod` (git pull + build + up -d).
+# No source bind-mount, no watchfiles, nothing published on the host.
+name: telegram_agy
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: telegram-agy
+  restart: always
+  env_file: [.env]
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mcp:
+    <<: *app
+    command: python -m src.entrypoints.mcp
+    depends_on:
+      db: {condition: service_healthy}
+
+  bot:
+    <<: *app
+    command: python -m src.entrypoints.bot
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    # EXACTLY ONE — one long-poller per token.
+
+  worker:
+    <<: *app
+    command: >
+      celery -A src.infrastructure.celery_app:celery_app worker
+      -Q replies,maintenance -c 4 -l INFO
+    volumes:
+      # Token file ALONE is enough; agy bootstraps the rest. MUST be :rw — agy
+      # rewrites it on refresh. The entrypoint chowns it to the agy user.
+      - ${HOME}/.gemini/antigravity-cli/antigravity-oauth-token:/home/agy/.gemini/antigravity-cli/antigravity-oauth-token:rw
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      mcp: {condition: service_started}
+    # Scale freely: docker compose -f docker-compose.yml up -d --scale worker=3
+
+  beat:
+    <<: *app
+    command: >
+      celery -A src.infrastructure.celery_app:celery_app beat -l INFO
+      -s /tmp/celerybeat-schedule
+    depends_on:
+      redis: {condition: service_healthy}
+    # EXACTLY ONE — a second scheduler doubles every job.
+
+volumes:
+  postgres_data:

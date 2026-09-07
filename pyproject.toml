@@ -15,12 +15,13 @@ dependencies = [
   "starlette>=0.46",
   "dependency-injector>=4.42",
   "dynaconf>=3.2",
-  "watchfiles>=1.0",
   "croniter>=6.2.4",
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.9", "ty>=0.0.1"]
+# watchfiles is only used by the dev compose commands for hot-reload; the prod
+# image builds with --no-dev and does not include it.
+dev = ["ruff>=0.9", "ty>=0.0.1", "watchfiles>=1.0"]
 
 [tool.ruff]
 line-length = 100

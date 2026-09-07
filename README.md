@@ -3,9 +3,10 @@
 Gen Đần ("gen đần" ≈ "the dim generation") listens in Telegram groups, forum
 topics and DMs, stores every message it can see into PostgreSQL, and answers when
 it is **mentioned**, **replied to**, or **DM'd**. Answers are produced by shelling
-out to the locally-authed **Antigravity CLI (`agy`)**. The bot keeps one long-lived
-*memory* note per chat thread, which `agy` updates itself through an MCP tool this
-project hosts.
+out to the locally-authed **Antigravity CLI (`agy`)**, which sends its replies
+itself through an MCP tool this project hosts. `agy` also keeps one long-lived
+*memory* note per chat (shared across a group's forum topics) and can schedule
+per-thread tasks — same MCP server.
 
 One `make dev` brings up the whole stack.
 
@@ -21,12 +22,13 @@ One `make dev` brings up the whole stack.
   **read-write** — `agy` rewrites it in place when the token refreshes, so a
   read-only mount eventually breaks auth. Nothing else from `~/.gemini` is copied;
   the token file alone is enough (`agy` bootstraps the rest inside the container).
-- On **Docker Desktop for macOS** the mount just works. On **native Linux** the
-  container's `agy` user is uid `1001`; if your host token file is owned by a
-  different uid, either `chown` a copy or adjust `useradd -u` in `Dockerfile.dev`
-  so the container user can write it.
+- The container's `agy` user is uid `1001`; the entrypoint `chown`s `/home/agy`
+  on start so the bind-mounted token is readable/writable regardless of the host
+  file's owner. (Docker Desktop for macOS remaps mount ownership anyway; a plain
+  Linux host does not, which is why the `chown` exists.)
 
-`make dev` refuses to start with a clear message if the token file is missing.
+`make dev` / `make prod` refuse to start with a clear message if the token file
+is missing.
 
 ## 2. Setup
 
@@ -61,10 +63,35 @@ The alternative is BotFather → `/setprivacy` → **Disable** — but that **al
 requires removing and re-adding the bot to every existing group** before it takes
 effect. Disabling privacy *before* creating a group avoids the re-add.
 
-## 4. Scaling
+## 4. Deploy to a VPS (production)
+
+`docker-compose.dev.yml` bind-mounts the source and hot-reloads with `watchfiles`
+— great locally, wrong for a server. `Dockerfile` + `docker-compose.yml` are the
+production pair: a multi-stage image with the code baked in, no dev tooling, no
+watcher, `restart: always`, and **nothing published on the host**.
+
+On the box (Docker + a signed-in `agy` so the OAuth token exists at
+`~/.gemini/antigravity-cli/antigravity-oauth-token`):
 
 ```bash
-docker compose -f docker-compose.dev.yml up --scale worker=3
+git clone https://github.com/quango2304/telegram_agy && cd telegram_agy
+cp .env.example .env         # then fill TELEGRAM_BOT_TOKEN + TELEGRAM_BOT_USERNAME
+make prod                    # docker compose -f docker-compose.yml up -d --build
+make prod-logs               # tail
+```
+
+Update = `git pull && make prod` (rebuilds, recreates, re-runs migrations from the
+`bot` entrypoint). Inspect with `docker compose -f docker-compose.yml exec …` —
+`db`, `redis` and `mcp` are only reachable inside the compose network.
+
+The entrypoint `chown`s `/home/agy` on start, so the root-owned bind-mounted token
+is readable by the unprivileged `agy` user on native Linux (Docker Desktop remaps
+this automatically; a plain Linux host does not).
+
+## 5. Scaling
+
+```bash
+docker compose -f docker-compose.yml up -d --scale worker=3
 ```
 
 - **`worker` scales freely.** Per-thread ordering is enforced by a Redis lock
@@ -74,7 +101,7 @@ docker compose -f docker-compose.dev.yml up --scale worker=3
 - **`bot` must stay at 1** — only one process may long-poll a token.
 - **`beat` must stay at 1** — a second scheduler doubles every scheduled job.
 
-## 5. What it costs
+## 6. What it costs
 
 - **~27k input tokens per reply.** That is `agy`'s own coding-agent system prompt,
   inflated from ~5k once an MCP server is registered, and paid on every reply. It
@@ -83,7 +110,7 @@ docker compose -f docker-compose.dev.yml up --scale worker=3
 - **~2s latency** on `gemini-3.8-flash-low` (3–8s on the thinking models).
 - Change the model with `AGY_MODEL` in `.env`; `agy models` lists the options.
 
-## 6. Retention
+## 7. Retention
 
 An hourly job keeps only the **newest 20 messages per chat thread**
 (`CONTEXT_MESSAGE_LIMIT`). `chat_threads` rows and `chat_memories` are **never**
@@ -92,7 +119,7 @@ every forum topic of a group — and is the only long-term recall: anything Gen
 Đần should remember beyond ~20 messages must have been written via the
 `update_memory` MCP tool before cleanup runs. This is by design.
 
-## 7. Security — stated plainly
+## 8. Security — stated plainly
 
 The bot is **open to anyone** (no allowlist, no rate limit) and runs `agy` with
 `--dangerously-skip-permissions`. **Anyone who can message it can cause commands
@@ -110,7 +137,7 @@ Mitigations, and their limits:
 **The container is not a security boundary.** Do not expose this beyond trusted
 groups, and do not publish the MCP port (`8010`) anywhere but local dev.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Symptom | Cause |
 |---|---|

@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+.env
+.ruff_cache
+.ty_cache
+.ty
+.idea
+.DS_Store
+specs
+celerybeat-schedule*
+Dockerfile.dev
+docker-compose.dev.yml
