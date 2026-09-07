@@ -22,6 +22,15 @@ class HistoryLine:
     is_bot_self: bool
 
 
+@dataclass(frozen=True)
+class PendingTrigger:
+    """An unanswered trigger message the current run must reply to."""
+
+    tg_message_id: int
+    name: str
+    text: str
+
+
 def _strip_handle(text: str, bot_username: str) -> str:
     if not bot_username:
         return text.strip()
@@ -39,6 +48,13 @@ def _fmt_line(line: HistoryLine, bot_username: str, truncate: int) -> str:
     return f"[{name}]: {body}"
 
 
+def _fmt_pending(p: PendingTrigger, bot_username: str, truncate: int) -> str:
+    body = _strip_handle(p.text, bot_username)
+    if len(body) > truncate:
+        body = body[:truncate] + "…"
+    return f'- (reply_to_tg_message_id={p.tg_message_id}) {p.name or "ai đó"}: "{body}"'
+
+
 def build_prompt(
     *,
     session_key: str,
@@ -51,8 +67,10 @@ def build_prompt(
     max_chars: int,
     truncate_chars: int,
     extra_tools: bool = False,
+    pending: Sequence[PendingTrigger] | None = None,
 ) -> str:
     mem_text = (memory or "").strip() or "(chưa có gì)"
+    pending = list(pending or [])
     extra_tools_line = (
         "CÔNG CỤ NGOÀI: bạn có CLI `composio` (đã đăng nhập sẵn) để thao tác Google "
         "Drive, Gmail, tìm kiếm web, v.v. Nếu người ta nhờ việc cần công cụ này thì "
@@ -70,6 +88,33 @@ def build_prompt(
     if len(trigger_body) > truncate_chars:
         trigger_body = trigger_body[:truncate_chars] + "…"
 
+    if len(pending) > 1:
+        pending_block = "\n".join(_fmt_pending(p, bot_username, truncate_chars) for p in pending)
+        closing = (
+            f"Có {len(pending)} tin đang chờ bạn trả lời (cũ → mới):\n"
+            f"{pending_block}\n\n"
+            "Trả lời TỪNG tin: với mỗi tin, gọi `send_chat_message` MỘT lần và "
+            "truyền `reply_to_tg_message_id` đúng bằng số ghi ở đầu dòng tin đó, "
+            "để tin trả lời được gắn (reply) đúng vào tin của người ta — đừng nhắn "
+            "trống không, đừng gộp mọi câu trả lời vào một tin. Nếu cần báo 'chờ "
+            "xíu' thì chỉ báo MỘT lần chung cho cả lượt trước khi bắt tay làm."
+        )
+    elif len(pending) == 1:
+        p = pending[0]
+        p_body = _strip_handle(p.text, bot_username)
+        if len(p_body) > truncate_chars:
+            p_body = p_body[:truncate_chars] + "…"
+        closing = (
+            f"Trả lời tin nhắn này của {p.name or 'ai đó'} (gọi `send_chat_message`, "
+            f"truyền `reply_to_tg_message_id={p.tg_message_id}` để reply đúng vào tin "
+            f'đó): "{p_body}"'
+        )
+    else:
+        closing = (
+            f"Trả lời tin nhắn này của {trigger_name} (nhớ gọi `send_chat_message`): "
+            f'"{trigger_body}"'
+        )
+
     def assemble(lines: list[str], mem: str) -> str:
         history_block = "\n".join(lines) if lines else "(chưa có tin nào)"
         return (
@@ -80,10 +125,13 @@ def build_prompt(
             "vào nhóm thì phải gọi tool `send_chat_message` với session_key ở trên.\n"
             "Được gọi nhiều lần để nhắn thành nhiều tin. Chữ bạn viết ra ngoài tool sẽ\n"
             "KHÔNG ai thấy, nên nếu không gọi tool thì coi như bạn im lặng.\n"
+            "Ai hỏi/nhắn gì thì reply thẳng vào tin của người đó: truyền\n"
+            "`reply_to_tg_message_id` = id tin nhắn của họ khi gọi `send_chat_message`\n"
+            "(id ghi ở phần dưới). Đừng nhắn khơi khơi.\n"
             "QUAN TRỌNG: nếu việc cần nhiều bước hoặc mất thời gian (tra cứu, tải file,\n"
-            "chạy `composio`, đặt nhiều lịch...), hãy gọi `send_chat_message` NGAY từ\n"
-            "đầu để báo 'ok để tui lo' rồi mới bắt tay làm — đừng để người ta chờ im\n"
-            "ru. Làm xong thì gọi lại để báo kết quả.\n\n"
+            "chạy `composio`, đặt nhiều lịch...), hãy gọi `send_chat_message` MỘT lần\n"
+            "ngay từ đầu để báo 'ok để tui lo' (một lần chung cho cả lượt thôi) rồi mới\n"
+            "bắt tay làm — đừng để người ta chờ im ru. Làm xong thì gọi lại báo kết quả.\n\n"
             "Nếu bạn học được điều gì đáng nhớ lâu dài về nhóm này hoặc người trong nhóm,\n"
             "hãy gọi tool `update_memory` với session_key ở trên và TOÀN BỘ nội dung\n"
             "memory mới (tool này GHI ĐÈ, không nối thêm; group thì memory dùng chung\n"
@@ -96,8 +144,7 @@ def build_prompt(
             "chọc ngoáy.\n\n"
             f"Ghi nhớ hiện tại về nhóm này:\n{mem}\n\n"
             f"Lịch sử chat gần đây (cũ → mới):\n{history_block}\n\n"
-            f"Trả lời tin nhắn này của {trigger_name} (nhớ gọi `send_chat_message`): "
-            f'"{trigger_body}"'
+            f"{closing}"
         )
 
     prompt = assemble(rendered, mem_text)

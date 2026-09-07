@@ -56,6 +56,30 @@ class MessageRepositoryImpl(IMessageRepository):
     async def get_by_id(self, message_id: int) -> Message | None:
         return await self._session.get(Message, message_id)
 
+    async def mark_trigger(self, message_id: int) -> None:
+        await self._session.execute(
+            update(Message).where(Message.id == message_id).values(is_trigger=True)
+        )
+
+    async def pending_triggers(self, thread_id: int, after_id: int, limit: int) -> list[Message]:
+        rows = (
+            (
+                await self._session.execute(
+                    select(Message)
+                    .where(
+                        Message.thread_id == thread_id,
+                        Message.is_trigger.is_(True),
+                        Message.id > after_id,
+                    )
+                    .order_by(Message.id.desc())
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return list(reversed(rows))
+
     async def update_text(self, thread_id: int, tg_message_id: int, new_text: str) -> None:
         await self._session.execute(
             update(Message)

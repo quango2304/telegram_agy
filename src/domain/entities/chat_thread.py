@@ -23,5 +23,9 @@ class ChatThread(Base):
     # private | group | supergroup | channel
     chat_type: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # High-water mark: the largest ``messages.id`` already covered by a reply
+    # run. A queued reply whose trigger id is <= this is a no-op (an earlier
+    # run in the same thread already answered it in a batch).
+    last_answered_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()

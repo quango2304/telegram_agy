@@ -7,6 +7,8 @@ swallowed so the poll loop keeps running.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -14,6 +16,7 @@ from src.application.ingest.commands import IncomingMessage, IngestResult
 from src.application.ingest.ingest_handler import IngestHandler
 from src.delivery.telegram.parsers import to_incoming_message
 from src.delivery.telegram.triggers import is_trigger
+from src.domain.interfaces.unit_of_work import IUnitOfWork
 from src.infrastructure.tasks import generate_reply
 from src.shared.logger import get_logger
 
@@ -21,8 +24,15 @@ logger = get_logger(__name__)
 
 
 class TelegramMessageHandler:
-    def __init__(self, ingest_handler: IngestHandler, bot_id: int, bot_username: str) -> None:
+    def __init__(
+        self,
+        ingest_handler: IngestHandler,
+        uow_factory: Callable[[], IUnitOfWork],
+        bot_id: int,
+        bot_username: str,
+    ) -> None:
         self._ingest = ingest_handler
+        self._uow_factory = uow_factory
         self._bot_id = bot_id
         self._bot_username = bot_username
 
@@ -58,6 +68,16 @@ class TelegramMessageHandler:
         message = update.effective_message
         if message is None or not is_trigger(message, self._bot_id, self._bot_username):
             return
+
+        # Persist the trigger flag BEFORE enqueueing: the worker may dequeue and
+        # read pending_triggers before this commit otherwise, and see nothing.
+        try:
+            async with self._uow_factory() as uow:
+                await uow.messages.mark_trigger(result.message_id)
+                await uow.commit()
+        except Exception:
+            logger.exception("mark_trigger failed", extra={"message_id": result.message_id})
+            # The runner falls back to the ref message, so still enqueue.
 
         generate_reply.apply_async(args=[result.message_id], queue="replies")
         logger.info(

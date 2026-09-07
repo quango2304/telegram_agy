@@ -25,6 +25,7 @@ class Message(Base):
     __table_args__ = (
         UniqueConstraint("thread_id", "tg_message_id", name="uq_messages_thread_tg"),
         Index("ix_messages_thread_sent_at", "thread_id", "sent_at"),
+        Index("ix_messages_thread_trigger", "thread_id", "is_trigger", "id"),
     )
 
     id: Mapped[int] = pk()
@@ -36,6 +37,12 @@ class Message(Base):
     from_username: Mapped[str | None] = mapped_column(String(256), nullable=True)
     from_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
     is_bot_self: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Set by the delivery layer when this message is what triggered a reply run
+    # (DM, @mention, or reply to the bot). The lock-holding worker answers every
+    # unanswered trigger for the thread in one agy run; siblings then no-op.
+    is_trigger: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)

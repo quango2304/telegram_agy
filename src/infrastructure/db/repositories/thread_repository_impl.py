@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,3 +29,15 @@ class ThreadRepositoryImpl(IThreadRepository):
 
     async def get_by_id(self, thread_id: int) -> ChatThread | None:
         return await self._session.get(ChatThread, thread_id)
+
+    async def bump_last_answered(self, thread_id: int, message_id: int) -> None:
+        # GREATEST so an out-of-order completion can never move the mark back.
+        await self._session.execute(
+            update(ChatThread)
+            .where(ChatThread.id == thread_id)
+            .values(
+                last_answered_message_id=func.greatest(
+                    func.coalesce(ChatThread.last_answered_message_id, 0), message_id
+                )
+            )
+        )

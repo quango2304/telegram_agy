@@ -28,7 +28,7 @@ from redis.exceptions import LockError
 
 from src.domain.interfaces.unit_of_work import IUnitOfWork
 from src.infrastructure.agy.agy_client_impl import AgyClient
-from src.infrastructure.agy.prompt_builder import HistoryLine, build_prompt
+from src.infrastructure.agy.prompt_builder import HistoryLine, PendingTrigger, build_prompt
 from src.infrastructure.config import Settings, get_settings
 from src.infrastructure.db.engine import build_engine, build_session_factory
 from src.infrastructure.db.uow import SqlAlchemyUnitOfWork
@@ -41,6 +41,10 @@ logger = get_logger(__name__)
 UowFactory = Callable[[], IUnitOfWork]
 
 
+# Newest N unanswered triggers a single locked run will answer in one agy pass.
+_MAX_PENDING_PER_RUN = 5
+
+
 @dataclass(frozen=True)
 class TriggerContext:
     thread_id: int
@@ -49,6 +53,7 @@ class TriggerContext:
     trigger_name: str
     trigger_text: str
     trigger_tg_id: int | None  # None for a scheduled run — reply is not a Telegram reply
+    ref_message_id: int | None = None  # DB messages.id of the trigger (None: scheduled)
 
 
 def run_generate_reply(task: Any, message_id: int) -> None:
@@ -74,6 +79,19 @@ async def _dispatch(task: Any, *, message_kind: str, ref_id: int) -> None:
             logger.warning("trigger gone", extra={"kind": message_kind, "ref_id": ref_id})
             return
 
+        # Pre-lock short-circuit: the mark only moves forward, so if an earlier
+        # batched run already covered this message we can bail before even
+        # queuing behind the lock (each sibling retry re-checks this).
+        if ctx.ref_message_id is not None and await _already_covered(
+            uow_factory, ctx.thread_id, ctx.ref_message_id
+        ):
+            logger.info(
+                "trigger already covered by an earlier run thread_id=%s message_id=%s",
+                ctx.thread_id,
+                ctx.ref_message_id,
+            )
+            return
+
         lock = redis_client.lock(
             f"lock:thread:{ctx.thread_id}",
             # Outlast a full run incl. the Celery hard time limit
@@ -87,7 +105,10 @@ async def _dispatch(task: Any, *, message_kind: str, ref_id: int) -> None:
             raise task.retry(countdown=5)
 
         try:
-            await _run_reply(settings, uow_factory, ctx)
+            if ctx.ref_message_id is not None:
+                await _run_message_reply(settings, uow_factory, ctx)
+            else:
+                await _run_reply(settings, uow_factory, ctx, pending=None, mark_after=None)
         finally:
             # lock may have already expired — don't mask the real error
             with contextlib.suppress(LockError):
@@ -95,6 +116,51 @@ async def _dispatch(task: Any, *, message_kind: str, ref_id: int) -> None:
     finally:
         await engine.dispose()
         redis_client.close()
+
+
+async def _already_covered(uow_factory: UowFactory, thread_id: int, ref_message_id: int) -> bool:
+    async with uow_factory() as uow:
+        thread = await uow.threads.get_by_id(thread_id)
+        mark = (thread.last_answered_message_id or 0) if thread is not None else 0
+    return ref_message_id <= mark
+
+
+async def _run_message_reply(
+    settings: Settings, uow_factory: UowFactory, ctx: TriggerContext
+) -> None:
+    """Batch path for a real Telegram trigger: under the thread lock, gather
+    every unanswered trigger (newest few) and answer them all in one agy run,
+    then move the thread's high-water mark past them so the sibling tasks queued
+    for those same messages become no-ops."""
+    assert ctx.ref_message_id is not None
+    async with uow_factory() as uow:
+        thread = await uow.threads.get_by_id(ctx.thread_id)
+        mark = (thread.last_answered_message_id or 0) if thread is not None else 0
+        if ctx.ref_message_id <= mark:
+            logger.info(
+                "trigger already covered (post-lock) thread_id=%s message_id=%s",
+                ctx.thread_id,
+                ctx.ref_message_id,
+            )
+            return
+        rows = await uow.messages.pending_triggers(ctx.thread_id, mark, _MAX_PENDING_PER_RUN)
+        if not rows:
+            # Flag never landed (mark_trigger raced or failed) — fall back to the
+            # one message we were dispatched for.
+            ref = await uow.messages.get_by_id(ctx.ref_message_id)
+            if ref is None:
+                logger.warning(
+                    "trigger gone thread_id=%s message_id=%s", ctx.thread_id, ctx.ref_message_id
+                )
+                return
+            rows = [ref]
+        pending = [
+            PendingTrigger(tg_message_id=r.tg_message_id, name=r.from_name or "ai đó", text=r.text)
+            for r in rows
+        ]
+        mark_after = rows[-1].id
+
+    await _run_reply(settings, uow_factory, ctx, pending=pending, mark_after=mark_after)
 
 
 async def _resolve_context(
@@ -132,17 +198,31 @@ async def _resolve_context(
             trigger_name=msg.from_name or "ai đó",
             trigger_text=msg.text,
             trigger_tg_id=msg.tg_message_id,
+            ref_message_id=msg.id,
         )
 
 
-async def _run_reply(settings: Settings, uow_factory: UowFactory, ctx: TriggerContext) -> None:
+async def _run_reply(
+    settings: Settings,
+    uow_factory: UowFactory,
+    ctx: TriggerContext,
+    *,
+    pending: list[PendingTrigger] | None,
+    mark_after: int | None,
+) -> None:
     """Run ``agy``; ``agy`` itself sends every message via the ``send_chat_message``
     MCP tool (see src/delivery/mcp/server.py). This function never sends to Telegram
     except the initial typing action — if ``agy`` fails or calls no tool, the thread
-    stays silent by design."""
+    stays silent by design.
+
+    ``pending`` (message path) is the list of unanswered triggers this run must
+    reply to, one reply each; ``mark_after`` is the ``messages.id`` to advance the
+    thread's high-water mark to once agy has actually sent something. Both are
+    ``None`` on the scheduled path (the instruction plays the trigger)."""
     sender = TelegramSender(settings.telegram_bot_token)
     agy = AgyClient(settings)
     session_key: str | None = None
+    default_reply_to = pending[0].tg_message_id if pending else ctx.trigger_tg_id
     try:
         async with uow_factory() as uow:
             rows = await uow.messages.last_n(ctx.thread_id, settings.context_message_limit)
@@ -152,7 +232,7 @@ async def _run_reply(settings: Settings, uow_factory: UowFactory, ctx: TriggerCo
             session_key = await uow.sessions.mint(
                 ctx.thread_id,
                 settings.session_ttl_seconds,
-                trigger_tg_message_id=ctx.trigger_tg_id,
+                trigger_tg_message_id=default_reply_to,
             )
             await uow.commit()
 
@@ -169,6 +249,7 @@ async def _run_reply(settings: Settings, uow_factory: UowFactory, ctx: TriggerCo
             max_chars=settings.agy_prompt_max_chars,
             truncate_chars=settings.agy_message_truncate_chars,
             extra_tools=bool(settings.composio_api_key),
+            pending=pending,
         )
 
         result = await agy.run(prompt)
@@ -176,15 +257,30 @@ async def _run_reply(settings: Settings, uow_factory: UowFactory, ctx: TriggerCo
         async with uow_factory() as uow:
             active = await uow.sessions.get_active(session_key)
             sent = active.sent_count if active is not None else 0
+        n_pending = len(pending) if pending else 0
         if not result.ok:
-            logger.error("agy failed; thread left silent", extra={"thread_id": ctx.thread_id})
+            logger.error(
+                "agy failed; thread left silent thread_id=%s pending=%s",
+                ctx.thread_id,
+                n_pending,
+            )
         elif sent == 0:
             logger.warning(
-                "agy called no send tool; thread left silent",
-                extra={"thread_id": ctx.thread_id},
+                "agy called no send tool; thread left silent thread_id=%s pending=%s",
+                ctx.thread_id,
+                n_pending,
             )
         else:
-            logger.info("reply sent", extra={"thread_id": ctx.thread_id, "messages": sent})
+            logger.info(
+                "reply sent thread_id=%s pending=%s sent=%s",
+                ctx.thread_id,
+                n_pending,
+                sent,
+            )
+            if mark_after is not None:
+                async with uow_factory() as uow:
+                    await uow.threads.bump_last_answered(ctx.thread_id, mark_after)
+                    await uow.commit()
     finally:
         if session_key is not None:
             try:

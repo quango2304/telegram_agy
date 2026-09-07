@@ -50,6 +50,16 @@ mcp = MCPServer("memory")
 # One run may send at most this many chat messages (runaway-loop guard).
 _MAX_MESSAGES_PER_RUN = 12
 
+
+def _pick_reply_to(explicit: int, session_trigger: int | None, already_sent: int) -> int | None:
+    """An explicit ``reply_to_tg_message_id`` from the model always wins. Else,
+    fall back to the session's trigger message — but only for the first send, so
+    a multi-message run doesn't reply-chain every line to the same message."""
+    if explicit and explicit > 0:
+        return explicit
+    return session_trigger if already_sent == 0 else None
+
+
 _uow_factory: Callable[[], IUnitOfWork] | None = None
 _sender: TelegramSender | None = None
 
@@ -76,7 +86,7 @@ async def health(_request: Request) -> JSONResponse:
 
 
 @mcp.tool()
-async def send_chat_message(session_key: str, text: str) -> str:
+async def send_chat_message(session_key: str, text: str, reply_to_tg_message_id: int = 0) -> str:
     """Gửi một tin nhắn vào đúng nhóm/kênh/DM đang xử lý.
 
     ĐÂY là cách duy nhất để nói với người dùng — chữ bạn viết ngoài tool không ai
@@ -87,6 +97,9 @@ async def send_chat_message(session_key: str, text: str) -> str:
     Args:
         session_key: khoá phiên được cung cấp trong prompt. Bắt buộc.
         text: nội dung tin nhắn.
+        reply_to_tg_message_id: (tuỳ chọn) id tin nhắn Telegram cần reply vào —
+            truyền id của tin người dùng bạn đang trả lời để tin của bạn gắn
+            (reply) đúng vào tin đó. Bỏ trống nếu không cần reply ai cụ thể.
     """
     text = text.strip()
     if not text:
@@ -103,7 +116,9 @@ async def send_chat_message(session_key: str, text: str) -> str:
         chat_id = thread.chat_id
         topic_id = thread.topic_id
         already_sent = session.sent_count
-        reply_to = session.trigger_tg_message_id if already_sent == 0 else None
+        reply_to = _pick_reply_to(
+            reply_to_tg_message_id, session.trigger_tg_message_id, already_sent
+        )
 
     if already_sent >= _MAX_MESSAGES_PER_RUN:
         raise ToolError("Đã gửi quá nhiều tin trong lượt này, dừng lại.")
@@ -165,7 +180,9 @@ def _safe_unlink(path: Path) -> None:
 
 
 @mcp.tool()
-async def send_chat_file(session_key: str, file_path: str, caption: str = "") -> str:
+async def send_chat_file(
+    session_key: str, file_path: str, caption: str = "", reply_to_tg_message_id: int = 0
+) -> str:
     """Gửi một FILE vào đúng nhóm/kênh/DM đang xử lý.
 
     Trước đó hãy tải/ghi file cần gửi vào thư mục /outbox/ (ví dụ tải file từ
@@ -176,6 +193,8 @@ async def send_chat_file(session_key: str, file_path: str, caption: str = "") ->
         session_key: khoá phiên được cung cấp trong prompt. Bắt buộc.
         file_path: đường dẫn tuyệt đối tới file, phải nằm trong /outbox/.
         caption: (tuỳ chọn) chú thích gửi kèm file.
+        reply_to_tg_message_id: (tuỳ chọn) id tin nhắn Telegram cần reply vào —
+            truyền id tin của người đã nhờ gửi file. Bỏ trống nếu không cần.
     """
     path = _resolve_outbox_file(file_path)
 
@@ -190,7 +209,9 @@ async def send_chat_file(session_key: str, file_path: str, caption: str = "") ->
         chat_id = thread.chat_id
         topic_id = thread.topic_id
         already_sent = session.sent_count
-        reply_to = session.trigger_tg_message_id if already_sent == 0 else None
+        reply_to = _pick_reply_to(
+            reply_to_tg_message_id, session.trigger_tg_message_id, already_sent
+        )
 
     if already_sent >= _MAX_MESSAGES_PER_RUN:
         raise ToolError("Đã gửi quá nhiều tin trong lượt này, dừng lại.")

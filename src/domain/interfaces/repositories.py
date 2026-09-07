@@ -19,6 +19,10 @@ class IThreadRepository(Protocol):
 
     async def get_by_id(self, thread_id: int) -> ChatThread | None: ...
 
+    async def bump_last_answered(self, thread_id: int, message_id: int) -> None:
+        """Move the thread's high-water mark forward to ``message_id`` (never back)."""
+        ...
+
 
 class IMessageRepository(Protocol):
     async def add(self, msg: Message) -> Message:
@@ -26,6 +30,15 @@ class IMessageRepository(Protocol):
         ...
 
     async def get_by_id(self, message_id: int) -> Message | None: ...
+
+    async def mark_trigger(self, message_id: int) -> None:
+        """Flag a stored message as a reply trigger (DM / @mention / reply-to-bot)."""
+        ...
+
+    async def pending_triggers(self, thread_id: int, after_id: int, limit: int) -> list[Message]:
+        """Up to ``limit`` newest trigger messages with ``id > after_id``,
+        returned oldest→newest."""
+        ...
 
     async def update_text(self, thread_id: int, tg_message_id: int, new_text: str) -> None:
         """Edited-message path: refresh ``text`` for an existing row."""
