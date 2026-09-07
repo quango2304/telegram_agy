@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "telegram-mcp": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/leongo/Desktop/projects/telegram-mcp",
+        "run",
+        "main.py"
+      ]
+    }
+  }
+}
