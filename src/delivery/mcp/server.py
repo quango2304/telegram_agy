@@ -208,26 +208,33 @@ async def send_chat_file(session_key: str, file_path: str, caption: str = "") ->
         logger.error("telegram file send failed", extra={"thread_id": thread_id, "err": str(exc)})
         raise ToolError(f"Gửi file lỗi: {exc}") from exc
 
+    # The file HAS been handed to Telegram. From here on nothing may raise: a
+    # post-send error that surfaced as a tool failure would make agy retry and
+    # send the file again (this is exactly how the 4x-send bug happened).
     label = f"[file: {path.name}]" + (f" {caption.strip()}" if caption.strip() else "")
-    async with _uow() as uow:
-        if sent_id is not None:
-            await uow.messages.add(
-                Message(
-                    thread_id=thread_id,
-                    tg_message_id=sent_id,
-                    from_user_id=None,
-                    from_username=None,
-                    from_name=None,
-                    is_bot_self=True,
-                    text=label,
-                    sent_at=datetime.now(UTC),
+    try:
+        async with _uow() as uow:
+            if sent_id is not None:
+                await uow.messages.add(
+                    Message(
+                        thread_id=thread_id,
+                        tg_message_id=sent_id,
+                        from_user_id=None,
+                        from_username=None,
+                        from_name=None,
+                        is_bot_self=True,
+                        text=label,
+                        sent_at=datetime.now(UTC),
+                    )
                 )
-            )
-        await uow.sessions.bump_sent_count(session_key, 1)
-        await uow.commit()
+            await uow.sessions.bump_sent_count(session_key, 1)
+            await uow.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("post-send bookkeeping failed", extra={"thread_id": thread_id})
 
     _safe_unlink(path)
-    logger.info("chat file sent", extra={"thread_id": thread_id, "name": path.name})
+    with contextlib.suppress(Exception):
+        logger.info("chat file sent", extra={"thread_id": thread_id, "file_name": path.name})
     return "Đã gửi file."
 
 
