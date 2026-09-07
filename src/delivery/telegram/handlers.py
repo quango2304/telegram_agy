@@ -13,6 +13,8 @@ from telegram.ext import ContextTypes
 from src.application.ingest.commands import IncomingMessage, IngestResult
 from src.application.ingest.ingest_handler import IngestHandler
 from src.delivery.telegram.parsers import to_incoming_message
+from src.delivery.telegram.triggers import is_trigger
+from src.infrastructure.tasks import generate_reply
 from src.shared.logger import get_logger
 
 logger = get_logger(__name__)
@@ -48,5 +50,17 @@ class TelegramMessageHandler:
     async def _after_ingest(
         self, update: Update, cmd: IncomingMessage, result: IngestResult
     ) -> None:
-        """Step 5 fills this in (trigger detection + Celery dispatch)."""
-        return
+        """Trigger detection + Celery dispatch. Only the DB row id is enqueued —
+        the worker fetches history at execution time."""
+        if result.is_edit or result.message_id is None:
+            return  # edits never trigger a reply
+
+        message = update.effective_message
+        if message is None or not is_trigger(message, self._bot_id, self._bot_username):
+            return
+
+        generate_reply.apply_async(args=[result.message_id], queue="replies")
+        logger.info(
+            "reply enqueued",
+            extra={"message_id": result.message_id, "thread_id": result.thread_id},
+        )
