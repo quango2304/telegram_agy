@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The OAuth token is bind-mounted from the host. On Docker Desktop (macOS) its
+# ownership is remapped to the container user automatically; on native Linux it
+# keeps the host uid (often root), so the unprivileged `agy` user can't read it
+# and every `agy` call fails with "authentication required". We run as root here,
+# so hand the whole HOME (token included) back to `agy`. `agy` rewrites the token
+# in place on refresh, which is why the mount must stay read-write.
+chown -R agy:agy /home/agy 2>/dev/null || true
+
 if [ -n "${AGY_MCP_URL:-}" ]; then
   # Writes /home/agy/.gemini/config/mcp_config.json (VERIFIED path).
   # Server name MUST be "memory" — permission rules and docs are name-coupled.
