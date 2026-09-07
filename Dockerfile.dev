@@ -1,0 +1,33 @@
+FROM python:3.13-slim-trixie
+
+COPY --from=ghcr.io/astral-sh/uv:0.8.19 /uv /uvx /bin/
+
+ENV UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PYTHON=/usr/local/bin/python \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+RUN apt-get update -qq \
+ && apt-get install -y -qq --no-install-recommends curl ca-certificates git gosu \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- agy CLI -------------------------------------------------------------
+# VERIFIED: this installer supports linux_arm64 and linux_amd64.
+# The ONLY supported flag is -d <dir>. --skip-aliases / --skip-path do NOT exist.
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- -d /usr/local/bin \
+ && agy --help > /dev/null
+
+# Unprivileged user that actually runs agy. Its HOME holds the OAuth token
+# (bind-mounted by compose) and the MCP registration.
+RUN useradd -m -u 1001 -s /bin/bash agy \
+ && mkdir -p /home/agy/.gemini/antigravity-cli /home/agy/.gemini/config \
+ && chown -R agy:agy /home/agy
+
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project
+
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -1,0 +1,84 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports: ["5434:5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports: ["6381:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mcp:
+    build: {context: ., dockerfile: Dockerfile.dev}
+    restart: unless-stopped
+    env_file: [.env]
+    command: uv run watchfiles "python -m src.entrypoints.mcp" src
+    volumes:
+      - .:/app
+      - /app/.venv
+    ports: ["8010:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+
+  bot:
+    build: {context: ., dockerfile: Dockerfile.dev}
+    restart: unless-stopped
+    env_file: [.env]
+    command: uv run watchfiles "python -m src.entrypoints.bot" src
+    volumes:
+      - .:/app
+      - /app/.venv
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    # EXACTLY ONE. Two processes long-polling the same token conflict.
+
+  worker:
+    build: {context: ., dockerfile: Dockerfile.dev}
+    restart: unless-stopped
+    env_file: [.env]
+    command: >
+      uv run celery -A src.infrastructure.celery_app:celery_app worker
+      -Q replies,maintenance -c 4 -l INFO
+    volumes:
+      - .:/app
+      - /app/.venv
+      # VERIFIED: the token file ALONE is enough; agy bootstraps the rest.
+      # MUST be read-write — agy rewrites this file when it refreshes.
+      - ${HOME}/.gemini/antigravity-cli/antigravity-oauth-token:/home/agy/.gemini/antigravity-cli/antigravity-oauth-token:rw
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      mcp: {condition: service_started}
+    # Scale freely: docker compose up --scale worker=3
+
+  beat:
+    build: {context: ., dockerfile: Dockerfile.dev}
+    restart: unless-stopped
+    env_file: [.env]
+    command: uv run celery -A src.infrastructure.celery_app:celery_app beat -l INFO
+    volumes:
+      - .:/app
+      - /app/.venv
+    depends_on:
+      redis: {condition: service_healthy}
+    # EXACTLY ONE. N beats = N× the hourly cleanup.
+
+volumes:
+  postgres_data:
