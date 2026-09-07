@@ -50,8 +50,15 @@ def build_prompt(
     now_local: str,
     max_chars: int,
     truncate_chars: int,
+    extra_tools: bool = False,
 ) -> str:
     mem_text = (memory or "").strip() or "(chưa có gì)"
+    extra_tools_line = (
+        "Bạn còn có thể có tool ngoài (Composio: tìm kiếm web, Gmail, Slack, Notion...) "
+        "— cứ dùng khi thật sự cần để trả lời cho đúng.\n"
+        if extra_tools
+        else ""
+    )
     rendered = [_fmt_line(h, bot_username, truncate_chars) for h in history]
     trigger_body = _strip_handle(trigger_text, bot_username)
     if len(trigger_body) > truncate_chars:
@@ -73,7 +80,8 @@ def build_prompt(
             "memory mới (tool này GHI ĐÈ, không nối thêm; group thì memory dùng chung\n"
             "cho cả nhóm, mọi topic).\n"
             "Nếu người ta nhờ làm gì đó vào lúc khác hoặc định kỳ (vd 'mai nhắc...',\n"
-            "'mỗi sáng 9h...'), hãy gọi tool `schedule_task` với session_key ở trên.\n\n"
+            "'mỗi sáng 9h...'), hãy gọi tool `schedule_task` với session_key ở trên.\n"
+            f"{extra_tools_line}\n"
             f"Ghi nhớ hiện tại về nhóm này:\n{mem}\n\n"
             f"Lịch sử chat gần đây (cũ → mới):\n{history_block}\n\n"
             f"Trả lời tin nhắn này của {trigger_name} (nhớ gọi `send_chat_message`): "

@@ -40,6 +40,12 @@ class Settings:
     agy_user: str = "agy"
     agy_mcp_url: str = "http://mcp:8000/mcp"
 
+    # Optional Composio MCP. Registration is done by docker/entrypoint.sh from
+    # the env directly; these are here for typed visibility / the prompt hint.
+    composio_api_key: str = ""
+    composio_mcp_url: str = "https://connect.composio.dev/mcp"
+    composio_mcp_header: str = "x-consumer-api-key"
+
     mcp_port: int = 8000
     context_message_limit: int = 20
     session_ttl_seconds: int = 600
@@ -75,6 +81,9 @@ def get_settings() -> Settings:
         agy_binary=_str("AGY_BINARY", "/usr/local/bin/agy"),
         agy_user=_str("AGY_USER", "agy"),
         agy_mcp_url=_str("AGY_MCP_URL", "http://mcp:8000/mcp"),
+        composio_api_key=_str("COMPOSIO_API_KEY"),
+        composio_mcp_url=_str("COMPOSIO_MCP_URL", "https://connect.composio.dev/mcp"),
+        composio_mcp_header=_str("COMPOSIO_MCP_HEADER", "x-consumer-api-key"),
         mcp_port=_int("MCP_PORT", 8000),
         context_message_limit=_int("CONTEXT_MESSAGE_LIMIT", 20),
         session_ttl_seconds=_int("SESSION_TTL_SECONDS", 600),

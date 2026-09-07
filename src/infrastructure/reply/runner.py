@@ -165,6 +165,7 @@ async def _run_reply(settings: Settings, uow_factory: UowFactory, ctx: TriggerCo
             now_local=to_local_str(datetime.now(UTC)),
             max_chars=settings.agy_prompt_max_chars,
             truncate_chars=settings.agy_message_truncate_chars,
+            extra_tools=bool(settings.composio_api_key),
         )
 
         result = await agy.run(prompt)
