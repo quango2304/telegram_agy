@@ -7,6 +7,7 @@ schedule are added in steps 6 and 8.
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 
 from src.infrastructure.config import get_settings
 
@@ -27,5 +28,12 @@ celery_app.conf.update(
     task_routes={
         "tasks.generate_reply": {"queue": "replies"},
         "tasks.cleanup_old_messages": {"queue": "maintenance"},
+    },
+    beat_schedule={
+        "cleanup-hourly": {
+            "task": "tasks.cleanup_old_messages",
+            "schedule": crontab(minute=0),  # top of every hour, UTC
+            "options": {"queue": "maintenance"},
+        },
     },
 )

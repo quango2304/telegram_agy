@@ -72,7 +72,9 @@ services:
     build: {context: ., dockerfile: Dockerfile.dev}
     restart: unless-stopped
     env_file: [.env]
-    command: uv run celery -A src.infrastructure.celery_app:celery_app beat -l INFO
+    command: >
+      uv run celery -A src.infrastructure.celery_app:celery_app beat -l INFO
+      -s /tmp/celerybeat-schedule
     volumes:
       - .:/app
       - /app/.venv

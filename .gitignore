@@ -5,3 +5,6 @@ __pycache__/
 .ruff_cache/
 .ty_cache/
 .DS_Store
+
+# celery beat local schedule db (compose writes it to /tmp inside the container)
+celerybeat-schedule*
