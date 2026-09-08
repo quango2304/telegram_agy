@@ -26,7 +26,7 @@ dev = ["ruff>=0.9", "ty>=0.0.1", "watchfiles>=1.0"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-extend-exclude = ["specs", "migrations/versions"]
+extend-exclude = ["migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]

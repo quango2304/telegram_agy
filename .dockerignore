@@ -8,7 +8,6 @@ __pycache__
 .ty
 .idea
 .DS_Store
-specs
 celerybeat-schedule*
 Dockerfile.dev
 docker-compose.dev.yml

@@ -1,6 +1,6 @@
 """Run ``agy`` as an unprivileged subprocess with a scrubbed environment.
 
-Every fact here was established by testing (see ``specs/overal.md``):
+Every fact here was established by testing:
 the prompt is an argv arg (no stdin); ``--print-timeout`` wants a duration
 string; ``status != "SUCCESS"`` or a non-empty ``denied_actions`` is a failure;
 ``--dangerously-skip-permissions`` is mandatory in headless mode.
@@ -16,7 +16,9 @@ import pwd
 import shutil
 import signal
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from src.infrastructure.config import Settings
@@ -66,7 +68,10 @@ class AgyClient:
     def __init__(self, settings: Settings) -> None:
         self._s = settings
 
-    async def run(self, prompt: str) -> AgyResult:
+    async def run(self, prompt: str, attachments: Sequence[Path] = ()) -> AgyResult:
+        """``attachments`` are copied into the run's workdir under their own
+        basename, so the prompt can refer to them as plain relative paths — agy
+        opens them with its own Read tool. They die with the workdir."""
         try:
             pw = pwd.getpwnam(self._s.agy_user)
         except KeyError:
@@ -77,6 +82,13 @@ class AgyClient:
         proc: asyncio.subprocess.Process | None = None
         try:
             os.chown(workdir, pw.pw_uid, pw.pw_gid)
+            for src in attachments:
+                # Root copies the file in, so hand each one to the agy uid or the
+                # unprivileged process can't open what we just told it to read.
+                dst = os.path.join(workdir, os.path.basename(src))
+                shutil.copyfile(src, dst)
+                os.chown(dst, pw.pw_uid, pw.pw_gid)
+                os.chmod(dst, 0o644)
             # agy walks up from cwd loading AGENTS.md as a hard workspace rule.
             # Drop the secret-guard here too — third copy, and the strongest
             # framing (a rule, not a request in the prompt body).

@@ -48,8 +48,17 @@ class IMessageRepository(Protocol):
         """The newest ``n`` messages, returned oldest→newest."""
         ...
 
-    async def prune_to_last_n(self, n: int) -> int:
-        """Delete every message outside the newest ``n`` per thread. Returns rows deleted."""
+    async def get_by_tg_id(self, thread_id: int, tg_message_id: int) -> Message | None:
+        """One message by its Telegram id within a thread."""
+        ...
+
+    async def prune_older_than(self, cutoff: datetime, keep_per_thread: int) -> int:
+        """Delete messages sent before ``cutoff``, except each thread's newest
+        ``keep_per_thread``. Returns rows deleted."""
+        ...
+
+    async def search(self, chat_id: int, query: str, limit: int) -> list[Message]:
+        """Full-text search across every thread of one chat, best match first."""
         ...
 
 

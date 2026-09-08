@@ -31,6 +31,17 @@ class PendingTrigger:
     text: str
 
 
+@dataclass(frozen=True)
+class PromptAttachment:
+    """An image already downloaded into the run's workdir, named so agy can open
+    it with a plain relative path."""
+
+    file_name: str
+    sender: str
+    tg_message_id: int
+    caption: str
+
+
 def _strip_handle(text: str, bot_username: str) -> str:
     if not bot_username:
         return text.strip()
@@ -55,6 +66,29 @@ def _fmt_pending(p: PendingTrigger, bot_username: str, truncate: int) -> str:
     return f'- (reply_to_tg_message_id={p.tg_message_id}) {p.name or "ai đó"}: "{body}"'
 
 
+def _fmt_attachments(
+    attachments: Sequence[PromptAttachment], bot_username: str, truncate: int
+) -> str:
+    """The block that tells agy an image is sitting in its working directory.
+
+    Empty string when nothing was attached, so the prompt keeps its old shape on
+    the (common) text-only path."""
+    if not attachments:
+        return ""
+    lines = []
+    for a in attachments:
+        caption = _strip_handle(a.caption, bot_username)
+        if len(caption) > truncate:
+            caption = caption[:truncate] + "…"
+        note = f' (chú thích: "{caption}")' if caption and not caption.startswith("[") else ""
+        lines.append(f"- ./{a.file_name} — ảnh của {a.sender}{note}")
+    return (
+        "ẢNH ĐÍNH KÈM: trong thư mục hiện tại có sẵn file ảnh dưới đây. Nếu câu hỏi "
+        "liên quan tới ảnh thì MỞ FILE RA XEM (đọc file bằng đường dẫn tương đối) "
+        "rồi trả lời theo đúng những gì thấy trong ảnh — đừng đoán mò.\n" + "\n".join(lines)
+    )
+
+
 def build_prompt(
     *,
     session_key: str,
@@ -66,12 +100,16 @@ def build_prompt(
     now_local: str,
     max_chars: int,
     truncate_chars: int,
+    context_limit: int,
     extra_tools: bool = False,
     pending: Sequence[PendingTrigger] | None = None,
+    attachments: Sequence[PromptAttachment] | None = None,
 ) -> str:
     mem_text = (memory or "").strip() or "(chưa có gì)"
     pending = list(pending or [])
-    tools_block = tool_usage_guide(composio=extra_tools)
+    attach_block = _fmt_attachments(attachments or [], bot_username, truncate_chars)
+    attach_section = f"{attach_block}\n\n" if attach_block else ""
+    tools_block = tool_usage_guide(composio=extra_tools, history_limit=context_limit)
     rendered = [_fmt_line(h, bot_username, truncate_chars) for h in history]
     trigger_body = _strip_handle(trigger_text, bot_username)
     if len(trigger_body) > truncate_chars:
@@ -121,17 +159,17 @@ def build_prompt(
             "QUAN TRỌNG: nếu việc cần nhiều bước hoặc mất thời gian (tra cứu, tải file,\n"
             "chạy `composio`, đặt nhiều lịch...), hãy gọi `send_chat_message` MỘT lần\n"
             "ngay từ đầu để báo 'ok để tui lo' (một lần chung cho cả lượt thôi) rồi mới\n"
-            "bắt tay làm — đừng để người ta chờ im ru. Làm xong thì gọi lại báo kết quả.\n\n"
-            "Nếu bạn học được điều gì đáng nhớ lâu dài về nhóm này hoặc người trong nhóm,\n"
-            "hãy gọi tool `update_memory` với session_key ở trên và TOÀN BỘ nội dung\n"
-            "memory mới (tool này GHI ĐÈ, không nối thêm; group thì memory dùng chung\n"
-            "cho cả nhóm, mọi topic).\n"
+            "bắt tay làm — đừng để người ta chờ im ru. Làm xong thì gọi lại báo kết quả\n"
+            "bằng MỘT TIN MỚI (đừng sửa đè lên tin 'chờ tí' đó).\n"
+            "Chỉ khi bạn LỠ nhắn sai (sai số liệu, sai tên, nhầm người) thì mới gọi\n"
+            "`edit_chat_message` để sửa lại cho đúng — đừng dùng nó cho việc gì khác.\n\n"
             "Nếu người ta nhờ làm gì đó vào lúc khác hoặc định kỳ (vd 'mai nhắc...',\n"
             "'mỗi sáng 9h...'), hãy gọi tool `schedule_task` với session_key ở trên.\n\n"
             f"{tools_block}\n\n"
             "Người ta nhờ việc cụ thể (tìm file, tra cứu, gửi file, đặt lịch...) thì "
             "LÀM cho xong đã, xong rồi muốn cà khịa gì thì cà — đừng né việc để đi "
             "chọc ngoáy.\n\n"
+            f"{attach_section}"
             f"Ghi nhớ hiện tại về nhóm này:\n{mem}\n\n"
             f"Lịch sử chat gần đây (cũ → mới):\n{history_block}\n\n"
             f"{closing}\n\n"

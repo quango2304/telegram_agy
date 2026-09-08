@@ -44,6 +44,11 @@ class IngestHandler:
                     is_bot_self=False,
                     text=msg.text,
                     sent_at=msg.sent_at,
+                    reply_to_tg_message_id=msg.reply_to_tg_message_id,
+                    media_kind=msg.media_kind,
+                    media_file_id=msg.media_file_id,
+                    media_mime=msg.media_mime,
+                    media_file_name=msg.media_file_name,
                 )
             )
             await uow.commit()

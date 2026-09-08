@@ -40,6 +40,50 @@ class TelegramSender:
         except Exception:
             logger.warning("send_chat_action failed", extra={"chat_id": chat_id})
 
+    async def set_reaction(self, chat_id: int, message_id: int, emoji: str | None) -> None:
+        """React (or, with ``emoji=None``, clear our reaction). Best-effort: a
+        group can restrict ``available_reactions``, and a message can be too old
+        or already deleted — none of that should fail a reply."""
+        await self._ensure()
+        try:
+            await self._bot.set_message_reaction(
+                chat_id=chat_id, message_id=message_id, reaction=(emoji or None)
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "set_message_reaction failed chat_id=%s message_id=%s err=%s",
+                chat_id,
+                message_id,
+                exc,
+            )
+
+    async def edit_text(self, chat_id: int, message_id: int, text: str) -> None:
+        await self._ensure()
+        await self._bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text)
+
+    async def download_media(self, file_id: str, dest: Path, max_bytes: int) -> bool:
+        """Fetch one attachment to ``dest``. Returns False (and logs) rather than
+        raising: a run must still answer when the file is gone or oversized.
+
+        Bot API ``getFile`` refuses anything over 20 MB, so the size check is
+        mostly about not wasting the round trip."""
+        await self._ensure()
+        try:
+            tg_file = await self._bot.get_file(
+                file_id, read_timeout=60, connect_timeout=30, pool_timeout=30
+            )
+            size = tg_file.file_size or 0
+            if size > max_bytes:
+                logger.info("media too large file_size=%s max=%s", size, max_bytes)
+                return False
+            await tg_file.download_to_drive(
+                custom_path=dest, read_timeout=120, connect_timeout=30, pool_timeout=30
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("media download failed file_id=%s err=%s", file_id[:24], exc)
+            return False
+
     async def send_reply(
         self, chat_id: int, text: str, topic_id: int, reply_to_message_id: int | None
     ) -> int:

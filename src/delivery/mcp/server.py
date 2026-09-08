@@ -42,6 +42,7 @@ from src.infrastructure.schedule.cron import (
 from src.infrastructure.telegram.sender import TelegramSender
 from src.shared.chunking import split_message
 from src.shared.logger import get_logger
+from src.shared.persona import BOT_LABEL
 
 logger = get_logger(__name__)
 
@@ -152,13 +153,106 @@ async def send_chat_message(session_key: str, text: str, reply_to_tg_message_id:
         await uow.sessions.bump_sent_count(session_key, len(sent_ids))
         await uow.commit()
 
-    logger.info(
-        "chat message sent thread_id=%s parts=%s reply_to=%s",
-        thread_id,
-        len(sent_ids),
-        reply_to,
-    )
-    return "Đã gửi."
+    # Everything past the actual send must be non-throwing: a raised error here
+    # makes MCP report the tool as failed and agy re-sends (see 374803b).
+    with contextlib.suppress(Exception):
+        logger.info(
+            "chat message sent thread_id=%s parts=%s reply_to=%s ids=%s",
+            thread_id,
+            len(sent_ids),
+            reply_to,
+            sent_ids,
+        )
+    ids = ", ".join(str(i) for i in sent_ids)
+    return f"Đã gửi. tg_message_id: {ids}"
+
+
+@mcp.tool()
+async def edit_chat_message(session_key: str, tg_message_id: int, text: str) -> str:
+    """Sửa lại một tin mà CHÍNH BẠN đã lỡ nhắn SAI.
+
+    CHỈ dùng để đính chính: bạn nhắn ra rồi mới phát hiện sai số liệu, sai tên,
+    nhầm người, sót ý quan trọng. KHÔNG dùng để thay tin báo "chờ tí" bằng kết
+    quả — kết quả thì nhắn thành một tin mới. Chỉ sửa được tin của bot, trong
+    đúng nhóm này.
+
+    Args:
+        session_key: khoá phiên được cung cấp trong prompt. Bắt buộc.
+        tg_message_id: id tin nhắn cần sửa — chính là số `send_chat_message` trả về.
+        text: nội dung mới (thay toàn bộ tin cũ).
+    """
+    text = text.strip()
+    if not text:
+        raise ToolError("Nội dung mới rỗng.")
+    if len(text) > get_settings().telegram_max_chars:
+        raise ToolError("Nội dung mới quá dài để sửa — gửi tin mới thay vì sửa.")
+
+    async with _uow() as uow:
+        session = await uow.sessions.get_active(session_key)
+        if session is None:
+            raise ToolError("session_key không hợp lệ hoặc đã hết hạn.")
+        thread = await uow.threads.get_by_id(session.thread_id)
+        if thread is None:
+            raise ToolError("Không tìm thấy nhóm cho phiên này.")
+        row = await uow.messages.get_by_tg_id(thread.id, tg_message_id)
+        if row is None or not row.is_bot_self:
+            raise ToolError(f"Không sửa được tin #{tg_message_id} — không phải tin của bot.")
+        # An edit loop is as spammy as a send loop; share the runaway budget.
+        if session.sent_count >= _MAX_MESSAGES_PER_RUN:
+            raise ToolError("Đã thao tác quá nhiều tin trong lượt này, dừng lại.")
+        chat_id = thread.chat_id
+        thread_id = thread.id
+
+    try:
+        await _telegram().edit_text(chat_id, tg_message_id, text)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("telegram edit failed", extra={"thread_id": thread_id, "err": str(exc)})
+        raise ToolError(f"Sửa tin lỗi: {exc}") from exc
+
+    # Post-send: the edit already landed in Telegram, so nothing below may raise.
+    with contextlib.suppress(Exception):
+        async with _uow() as uow:
+            await uow.messages.update_text(thread_id, tg_message_id, text)
+            await uow.sessions.bump_sent_count(session_key, 1)
+            await uow.commit()
+        logger.info("chat message edited thread_id=%s tg_message_id=%s", thread_id, tg_message_id)
+    return "Đã sửa tin."
+
+
+@mcp.tool()
+async def search_history(session_key: str, query: str, limit: int = 0) -> str:
+    """Tìm lại tin nhắn CŨ của nhóm này (xa hơn phần lịch sử kèm trong prompt).
+
+    Tìm theo từ khoá trên toàn bộ tin đã lưu của nhóm (mọi topic), trong khoảng
+    thời gian còn giữ. Truyền vài từ khoá thôi, đừng truyền cả câu hỏi.
+
+    Args:
+        session_key: khoá phiên được cung cấp trong prompt. Bắt buộc.
+        query: từ khoá cần tìm (vd "quán lẩu", "link figma").
+        limit: (tuỳ chọn) số tin tối đa muốn lấy.
+    """
+    query = query.strip()
+    if not query:
+        raise ToolError("Thiếu từ khoá cần tìm.")
+    settings = get_settings()
+    capped = settings.history_search_limit
+    n = capped if limit <= 0 else min(limit, capped)
+
+    async with _uow() as uow:
+        thread_id = await _resolve_thread(uow, session_key)
+        thread = await uow.threads.get_by_id(thread_id)
+        if thread is None:
+            raise ToolError("Không tìm thấy nhóm cho phiên này.")
+        rows = await uow.messages.search(thread.chat_id, query, n)
+        if not rows:
+            return f'Không tìm thấy tin nào khớp "{query}".'
+        lines = [
+            f"[{to_local_str(r.sent_at)}] "
+            f"{BOT_LABEL if r.is_bot_self else (r.from_name or 'ai đó')}: "
+            f"{r.text[:400]}"
+            for r in rows
+        ]
+        return "\n".join(lines)
 
 
 def _resolve_outbox_file(file_path: str) -> Path:

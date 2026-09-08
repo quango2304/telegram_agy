@@ -5,11 +5,65 @@ No I/O, no DB — trivially testable.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from telegram import Chat, Message, Update
 
 from src.application.ingest.commands import IncomingMessage
 
 _UNKNOWN_AUTHOR = "ai đó"
+
+
+@dataclass(frozen=True)
+class MediaRef:
+    """What is attached to a message, as ids only — no bytes are fetched here."""
+
+    kind: str
+    file_id: str
+    mime: str | None = None
+    file_name: str | None = None
+
+
+def resolve_media(message: Message) -> MediaRef | None:
+    """The one attachment worth remembering, or ``None``.
+
+    ``message.photo`` is a tuple of sizes, smallest → largest; the last entry is
+    the full-resolution one. Only kinds a model can actually open are worth a
+    ``file_id``: stickers (Lottie/webm), video and audio are recorded by kind so
+    the history line stays honest, but are never downloaded (see
+    ``is_image_media``)."""
+    if message.photo:
+        return MediaRef(kind="photo", file_id=message.photo[-1].file_id, mime="image/jpeg")
+    if message.document is not None:
+        doc = message.document
+        return MediaRef(
+            kind="document",
+            file_id=doc.file_id,
+            mime=doc.mime_type,
+            file_name=doc.file_name,
+        )
+    if message.voice is not None:
+        return MediaRef(kind="voice", file_id=message.voice.file_id, mime=message.voice.mime_type)
+    if message.video is not None:
+        return MediaRef(kind="video", file_id=message.video.file_id, mime=message.video.mime_type)
+    if message.audio is not None:
+        return MediaRef(kind="audio", file_id=message.audio.file_id, mime=message.audio.mime_type)
+    if message.animation is not None:
+        return MediaRef(kind="animation", file_id=message.animation.file_id)
+    if message.video_note is not None:
+        return MediaRef(kind="video_note", file_id=message.video_note.file_id)
+    if message.sticker is not None:
+        return MediaRef(kind="sticker", file_id=message.sticker.file_id)
+    return None
+
+
+def is_image_media(kind: str | None, mime: str | None) -> bool:
+    """Only these are handed to ``agy``. A Telegram photo is always a JPEG; a
+    document counts when it declares an ``image/*`` mime. Audio is excluded
+    deliberately — verified that ``agy`` cannot transcribe ogg/opus or mp3."""
+    if kind == "photo":
+        return True
+    return kind == "document" and bool(mime) and str(mime).startswith("image/")
 
 
 def resolve_text(message: Message) -> str:
@@ -84,6 +138,8 @@ def to_incoming_message(update: Update) -> IncomingMessage | None:
         return None
 
     chat = update.effective_chat
+    media = resolve_media(message)
+    reply_to = message.reply_to_message
     return IncomingMessage(
         chat_id=chat.id,
         topic_id=resolve_topic_id(chat, message),
@@ -96,4 +152,9 @@ def to_incoming_message(update: Update) -> IncomingMessage | None:
         text=resolve_text(message),
         sent_at=message.date,
         is_edit=update.edited_message is not None,
+        reply_to_tg_message_id=(reply_to.message_id if reply_to is not None else None),
+        media_kind=(media.kind if media else None),
+        media_file_id=(media.file_id if media else None),
+        media_mime=(media.mime if media else None),
+        media_file_name=(media.file_name if media else None),
     )

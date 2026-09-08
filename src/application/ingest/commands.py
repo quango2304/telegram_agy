@@ -23,6 +23,12 @@ class IncomingMessage:
     text: str
     sent_at: datetime
     is_edit: bool = False
+    reply_to_tg_message_id: int | None = None
+    # Attached media, if any — a file_id only; nothing is downloaded at ingest.
+    media_kind: str | None = None
+    media_file_id: str | None = None
+    media_mime: str | None = None
+    media_file_name: str | None = None
 
 
 @dataclass(frozen=True)

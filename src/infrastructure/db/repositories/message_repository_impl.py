@@ -1,20 +1,26 @@
 from __future__ import annotations
 
-from sqlalchemy import select, text, update
+from datetime import datetime
+
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.domain.entities.chat_thread import ChatThread
 from src.domain.entities.message import Message
 from src.domain.interfaces.repositories import IMessageRepository
 
+# Retention sweep: drop anything past the cutoff EXCEPT each thread's newest
+# `keep` rows, so a thread nobody has touched in weeks still has context to
+# answer with. One statement with a window function — never loop in Python.
 _PRUNE_SQL = text(
     """
     DELETE FROM messages m USING (
-        SELECT id, row_number() OVER (
+        SELECT id, sent_at, row_number() OVER (
             PARTITION BY thread_id ORDER BY sent_at DESC, id DESC) AS rn
         FROM messages
     ) r
-    WHERE m.id = r.id AND r.rn > :n
+    WHERE m.id = r.id AND r.rn > :keep AND r.sent_at < :cutoff
     """
 )
 
@@ -33,6 +39,11 @@ class MessageRepositoryImpl(IMessageRepository):
             "is_bot_self": msg.is_bot_self,
             "text": msg.text,
             "sent_at": msg.sent_at,
+            "reply_to_tg_message_id": msg.reply_to_tg_message_id,
+            "media_kind": msg.media_kind,
+            "media_file_id": msg.media_file_id,
+            "media_mime": msg.media_mime,
+            "media_file_name": msg.media_file_name,
         }
         stmt = (
             pg_insert(Message)
@@ -102,6 +113,46 @@ class MessageRepositoryImpl(IMessageRepository):
         )
         return list(reversed(rows))
 
-    async def prune_to_last_n(self, n: int) -> int:
-        result = await self._session.execute(_PRUNE_SQL, {"n": n})
+    async def get_by_tg_id(self, thread_id: int, tg_message_id: int) -> Message | None:
+        return (
+            await self._session.execute(
+                select(Message).where(
+                    Message.thread_id == thread_id,
+                    Message.tg_message_id == tg_message_id,
+                )
+            )
+        ).scalar_one_or_none()
+
+    async def prune_older_than(self, cutoff: datetime, keep_per_thread: int) -> int:
+        result = await self._session.execute(
+            _PRUNE_SQL, {"cutoff": cutoff, "keep": keep_per_thread}
+        )
         return int(getattr(result, "rowcount", 0) or 0)
+
+    async def search(self, chat_id: int, query: str, limit: int) -> list[Message]:
+        query = query.strip()
+        if not query:
+            return []
+
+        tsq = func.websearch_to_tsquery("simple", query)
+        stmt = (
+            select(Message)
+            .join(ChatThread, ChatThread.id == Message.thread_id)
+            .where(ChatThread.chat_id == chat_id, Message.tsv.op("@@")(tsq))
+            .order_by(func.ts_rank(Message.tsv, tsq).desc(), Message.sent_at.desc())
+            .limit(limit)
+        )
+        rows = list((await self._session.execute(stmt)).scalars().all())
+        if rows:
+            return rows
+
+        # FTS found nothing: retry as a substring match. Catches a query the
+        # tokeniser split differently, or a fragment inside a longer word.
+        like_stmt = (
+            select(Message)
+            .join(ChatThread, ChatThread.id == Message.thread_id)
+            .where(ChatThread.chat_id == chat_id, Message.text.ilike(f"%{query}%"))
+            .order_by(Message.sent_at.desc())
+            .limit(limit)
+        )
+        return list((await self._session.execute(like_stmt)).scalars().all())

@@ -45,12 +45,34 @@ class Settings:
     composio_api_key: str = ""
 
     mcp_port: int = 8000
-    context_message_limit: int = 20
+    context_message_limit: int = 30  # prompt window — NOT retention (see below)
     session_ttl_seconds: int = 600
     telegram_max_chars: int = 4096
     telegram_max_file_mb: int = 50  # Bot API send_document ceiling
     agy_prompt_max_chars: int = 60_000
     agy_message_truncate_chars: int = 2_000
+
+    # Retention: messages older than this are pruned hourly, except the newest
+    # `context_message_limit` of each thread (a quiet thread keeps its context).
+    message_retention_days: int = 10
+    # Rows a single search_history call may return.
+    history_search_limit: int = 20
+
+    # Images handed to agy per run, chosen in priority order (the trigger's own
+    # photo, then the photo it replies to, then the newest in the window). Each
+    # one costs real input tokens. Bot API getFile caps downloads at 20 MB.
+    media_max_per_run: int = 5
+    media_max_download_mb: int = 20
+    # Tier-3 fallback window. A photo with no explicit link to the question is
+    # only attached when it was posted within this many seconds of the trigger —
+    # which catches an album (one caption, N image messages, all same instant)
+    # and "photo, then immediately asks", without re-downloading old photos on
+    # every unrelated message.
+    media_context_seconds: int = 60
+
+    # Emoji reacted onto a trigger message while the run is in flight ("seen").
+    # Empty disables. Must be a reaction Telegram allows for bots.
+    reaction_ack: str = "👀"
 
     # Shared dir (a named volume mounted in both worker and mcp) where agy drops
     # files it wants sent; send_chat_file only accepts paths under here.
@@ -86,13 +108,19 @@ def get_settings() -> Settings:
         agy_mcp_url=_str("AGY_MCP_URL", "http://mcp:8000/mcp"),
         composio_api_key=_str("COMPOSIO_API_KEY"),
         mcp_port=_int("MCP_PORT", 8000),
-        context_message_limit=_int("CONTEXT_MESSAGE_LIMIT", 20),
+        context_message_limit=_int("CONTEXT_MESSAGE_LIMIT", 30),
         session_ttl_seconds=_int("SESSION_TTL_SECONDS", 600),
         telegram_max_chars=_int("TELEGRAM_MAX_CHARS", 4096),
         telegram_max_file_mb=_int("TELEGRAM_MAX_FILE_MB", 50),
         outbox_dir=_str("OUTBOX_DIR", "/outbox"),
         agy_prompt_max_chars=_int("AGY_PROMPT_MAX_CHARS", 60_000),
         agy_message_truncate_chars=_int("AGY_MESSAGE_TRUNCATE_CHARS", 2_000),
+        message_retention_days=_int("MESSAGE_RETENTION_DAYS", 10),
+        history_search_limit=_int("HISTORY_SEARCH_LIMIT", 20),
+        media_max_per_run=_int("MEDIA_MAX_PER_RUN", 5),
+        media_max_download_mb=_int("MEDIA_MAX_DOWNLOAD_MB", 20),
+        media_context_seconds=_int("MEDIA_CONTEXT_SECONDS", 60),
+        reaction_ack=_str("REACTION_ACK", "👀"),
         log_level=_str("LOG_LEVEL", "INFO"),
         log_format=_str("LOG_FORMAT", "plain"),
     )

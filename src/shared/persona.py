@@ -20,20 +20,47 @@ Trả lời NGẮN như đang chat — không markdown, không bullet, không ti
 BOT_LABEL = "Gen Đần"
 
 
-def tool_usage_guide(*, composio: bool) -> str:
+# Soft budget for the per-chat memory note, stated in the prompt. The MCP tool
+# still hard-caps at 8000 as a backstop, but a note that grows to the cap costs
+# tokens on every single reply and turns into an unreadable pile — so the model
+# is told to curate it down to this instead of appending forever.
+MEMORY_SOFT_LIMIT_CHARS = 3000
+
+
+def tool_usage_guide(*, composio: bool, history_limit: int) -> str:
     """Tool rules injected into the run prompt.
 
     ``composio`` mirrors ``build_prompt(extra_tools=...)`` — pass it ``False`` when
     ``COMPOSIO_API_KEY`` is unset so the agent is never told to lean on a CLI that
     isn't logged in.
+
+    ``history_limit`` is ``CONTEXT_MESSAGE_LIMIT``: the model is told the real
+    number so it understands why memory matters at all.
     """
     parts = [
+        f"GHI NHỚ LÂU DÀI: mỗi lượt bạn CHỈ thấy khoảng {history_limit} tin gần "
+        "nhất — mọi thứ cũ hơn coi như biến mất khỏi đầu bạn. Nên hễ biết được "
+        "điều gì đáng nhớ lâu dài (tên/biệt danh, cách xưng hô, sở thích, nghề "
+        "nghiệp, quy ước riêng của nhóm, việc đang làm dở, chuyện quan trọng vừa "
+        "xảy ra) thì gọi tool `update_memory` NGAY trong lượt đó, đừng để lượt sau "
+        "vì lúc đó bạn quên rồi.\n"
+        "Tool này GHI ĐÈ toàn bộ memory cũ, không nối thêm — nên phải gửi BẢN ĐẦY "
+        "ĐỦ đã gộp: lấy memory hiện có ở dưới, thêm cái mới vào, rồi gửi cả cục.\n"
+        f"Giữ memory GỌN, dưới {MEMORY_SOFT_LIMIT_CHARS} ký tự. Sắp chạm mức đó "
+        "thì tự dọn: gộp ý trùng, tóm tắt ngắn lại, bỏ những thứ đã cũ / không "
+        "còn đúng / không còn quan trọng. Memory là sổ tay tinh gọn, không phải "
+        "nhật ký chép tất.",
         "CÔNG CỤ — TRA WEB: khi người ta hỏi thứ cần ĐÚNG và cập nhật (giá vàng, "
         "tỷ giá, giá cổ phiếu / coin, thời tiết, tin tức, kết quả bóng đá, giờ mở "
         "cửa, quán ăn ngon / địa điểm cụ thể, giá sản phẩm...), PHẢI tìm trên web "
         "trước rồi mới trả lời — nói ra con số / thông tin thật kèm thời điểm, đừng "
         "phịa từ trí nhớ. Chuyện tán dóc, cà khịa, ý kiến cá nhân thì khỏi tra.",
         "GỬI FILE: đặt file vào /outbox/ rồi gọi tool `send_chat_file` ĐÚNG MỘT LẦN cho mỗi file.",
+        "TÌM LẠI CHUYỆN CŨ: lịch sử chat kèm dưới đây chỉ là mấy tin gần nhất. Ai "
+        "nhắc chuyện cũ hơn ('hôm trước ai gửi cái link đó', 'thằng nào nói vụ kia') "
+        "thì gọi tool `search_history` với vài TỪ KHOÁ (đừng gõ cả câu hỏi) để tra "
+        "lại tin cũ của nhóm rồi mới trả lời, nhưng mà cũng hạn chế thui, chỉ dùng "
+        "khi cần thiết nhé.",
     ]
     if composio:
         parts.append(

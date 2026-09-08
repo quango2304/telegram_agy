@@ -18,17 +18,28 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Callable
+import re
+import shutil
+import tempfile
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import redis
 from redis.exceptions import LockError
 
+from src.delivery.telegram.parsers import is_image_media
+from src.domain.entities.message import Message
 from src.domain.interfaces.unit_of_work import IUnitOfWork
 from src.infrastructure.agy.agy_client_impl import AgyClient
-from src.infrastructure.agy.prompt_builder import HistoryLine, PendingTrigger, build_prompt
+from src.infrastructure.agy.prompt_builder import (
+    HistoryLine,
+    PendingTrigger,
+    PromptAttachment,
+    build_prompt,
+)
 from src.infrastructure.config import Settings, get_settings
 from src.infrastructure.db.engine import build_engine, build_session_factory
 from src.infrastructure.db.uow import SqlAlchemyUnitOfWork
@@ -42,7 +53,7 @@ UowFactory = Callable[[], IUnitOfWork]
 
 
 # Newest N unanswered triggers a single locked run will answer in one agy pass.
-_MAX_PENDING_PER_RUN = 5
+_MAX_PENDING_PER_RUN = 10
 
 
 @dataclass(frozen=True)
@@ -54,6 +65,22 @@ class TriggerContext:
     trigger_text: str
     trigger_tg_id: int | None  # None for a scheduled run — reply is not a Telegram reply
     ref_message_id: int | None = None  # DB messages.id of the trigger (None: scheduled)
+
+
+@dataclass(frozen=True)
+class MediaPick:
+    """A chosen attachment, flattened to primitives.
+
+    The UoW rolls back on exit, which expires every ORM instance it loaded — so
+    anything needed after the session closes must be copied out inside the block
+    (house rule; see SqlAlchemyUnitOfWork.__aexit__).
+    """
+
+    file_id: str
+    tg_message_id: int
+    from_name: str
+    caption: str
+    file_name: str
 
 
 def run_generate_reply(task: Any, message_id: int) -> None:
@@ -202,6 +229,116 @@ async def _resolve_context(
         )
 
 
+_SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _attachment_name(msg: Message) -> str:
+    """A predictable, shell-safe basename agy can reference in the workdir."""
+    ext = ".jpg"
+    if msg.media_file_name and "." in msg.media_file_name:
+        ext = "." + _SAFE_NAME.sub("", msg.media_file_name.rsplit(".", 1)[1])[:8].lower()
+    elif msg.media_mime and "/" in msg.media_mime:
+        ext = "." + _SAFE_NAME.sub("", msg.media_mime.split("/", 1)[1])[:8].lower()
+    return f"anh_{msg.tg_message_id}{ext or '.jpg'}"
+
+
+async def _pick_media(
+    uow: IUnitOfWork,
+    thread_id: int,
+    history: Sequence[Message],
+    pending: Sequence[PendingTrigger] | None,
+    limit: int,
+    window_seconds: int,
+) -> list[MediaPick]:
+    """Which images this run should actually fetch, in priority order:
+
+    1. an image on a trigger message itself ("@bot cái này là gì" + photo),
+    2. an image on the message a trigger replies to — the dominant flow: someone
+       posts a photo, chatter follows, then someone replies to *that* photo,
+    3. otherwise an image posted *right around* the trigger — within
+       ``window_seconds``. That is what picks up an album (Telegram sends it as
+       one captioned message plus N bare image messages, all at the same instant)
+       and the "posts a photo, then immediately asks" flow.
+
+    Tier 3 is time-boxed on purpose: without it, every reply in a photo-heavy
+    group would re-download the last N images even when the question is "2 + 2".
+
+    Bounded by ``limit`` because every image costs real input tokens.
+    """
+    if limit <= 0:
+        return []
+
+    by_tg = {m.tg_message_id: m for m in history}
+    trigger_ids = [p.tg_message_id for p in (pending or [])]
+    picked: list[MediaPick] = []
+    seen: set[int] = set()
+
+    def take(msg: Message | None) -> None:
+        if (
+            msg is not None
+            and msg.id not in seen
+            and msg.media_file_id
+            and is_image_media(msg.media_kind, msg.media_mime)
+            and len(picked) < limit
+        ):
+            seen.add(msg.id)
+            picked.append(
+                MediaPick(
+                    file_id=msg.media_file_id,
+                    tg_message_id=msg.tg_message_id,
+                    from_name=msg.from_name or "ai đó",
+                    caption=msg.text,
+                    file_name=_attachment_name(msg),
+                )
+            )
+
+    for tg_id in reversed(trigger_ids):  # newest trigger first
+        take(by_tg.get(tg_id))
+    for tg_id in reversed(trigger_ids):
+        trigger = by_tg.get(tg_id)
+        if trigger is not None and trigger.reply_to_tg_message_id:
+            target = by_tg.get(trigger.reply_to_tg_message_id)
+            if target is None:
+                # Older than the prompt window but still in retention.
+                target = await uow.messages.get_by_tg_id(thread_id, trigger.reply_to_tg_message_id)
+            take(target)
+    # Tier 3, only near the trigger in time. No trigger at all (a scheduled run)
+    # means no question to illustrate, so nothing is attached.
+    trigger_times = [by_tg[t].sent_at for t in trigger_ids if t in by_tg]
+    if trigger_times:
+        newest = max(trigger_times)
+        window = timedelta(seconds=window_seconds)
+        for msg in reversed(history):
+            if abs(newest - msg.sent_at) <= window:
+                take(msg)
+    return picked
+
+
+async def _download_media(
+    settings: Settings, sender: TelegramSender, picks: Sequence[MediaPick], dest_dir: Path
+) -> list[tuple[Path, PromptAttachment]]:
+    """Fetch each pick. A failed download is skipped, never fatal — the run still
+    answers, just without that image."""
+    out: list[tuple[Path, PromptAttachment]] = []
+    max_bytes = settings.media_max_download_mb * 1024 * 1024
+    for pick in picks:
+        path = dest_dir / pick.file_name
+        if not await sender.download_media(pick.file_id, path, max_bytes):
+            continue
+        out.append(
+            (
+                path,
+                PromptAttachment(
+                    file_name=pick.file_name,
+                    sender=pick.from_name,
+                    tg_message_id=pick.tg_message_id,
+                    caption=pick.caption,
+                ),
+            )
+        )
+    return out
+
+
 async def _run_reply(
     settings: Settings,
     uow_factory: UowFactory,
@@ -223,12 +360,24 @@ async def _run_reply(
     agy = AgyClient(settings)
     session_key: str | None = None
     default_reply_to = pending[0].tg_message_id if pending else ctx.trigger_tg_id
+    # Newest trigger — what we react to, and what the user is watching.
+    ack_tg_id = pending[-1].tg_message_id if pending else ctx.trigger_tg_id
+    media_dir: Path | None = None
+    reacted = False
     try:
         async with uow_factory() as uow:
             rows = await uow.messages.last_n(ctx.thread_id, settings.context_message_limit)
             history = [HistoryLine(r.from_name or "ai đó", r.text, r.is_bot_self) for r in rows]
             memory = await uow.memories.get(ctx.chat_id)
             memory_text = memory.content if memory else None
+            media_rows = await _pick_media(
+                uow,
+                ctx.thread_id,
+                rows,
+                pending,
+                settings.media_max_per_run,
+                settings.media_context_seconds,
+            )
             session_key = await uow.sessions.mint(
                 ctx.thread_id,
                 settings.session_ttl_seconds,
@@ -237,6 +386,23 @@ async def _run_reply(
             await uow.commit()
 
         await sender.send_typing(ctx.chat_id, ctx.topic_id)
+        if settings.reaction_ack and ack_tg_id is not None:
+            await sender.set_reaction(ctx.chat_id, ack_tg_id, settings.reaction_ack)
+            reacted = True
+
+        attachments: list[PromptAttachment] = []
+        attachment_paths: list[Path] = []
+        if media_rows:
+            media_dir = Path(tempfile.mkdtemp(prefix="media-"))
+            downloaded = await _download_media(settings, sender, media_rows, media_dir)
+            attachment_paths = [p for p, _ in downloaded]
+            attachments = [a for _, a in downloaded]
+            logger.info(
+                "media attached thread_id=%s picked=%s downloaded=%s",
+                ctx.thread_id,
+                len(media_rows),
+                len(attachments),
+            )
 
         prompt = build_prompt(
             session_key=session_key,
@@ -248,11 +414,13 @@ async def _run_reply(
             now_local=to_local_str(datetime.now(UTC)),
             max_chars=settings.agy_prompt_max_chars,
             truncate_chars=settings.agy_message_truncate_chars,
+            context_limit=settings.context_message_limit,
             extra_tools=bool(settings.composio_api_key),
             pending=pending,
+            attachments=attachments,
         )
 
-        result = await agy.run(prompt)
+        result = await agy.run(prompt, attachments=attachment_paths)
 
         async with uow_factory() as uow:
             active = await uow.sessions.get_active(session_key)
@@ -277,11 +445,18 @@ async def _run_reply(
                 n_pending,
                 sent,
             )
+            # The reply itself is now the acknowledgement, so drop the 👀. On a
+            # failure it deliberately stays: it is the only trace that the bot
+            # saw the message at all (the thread stays silent by design).
+            if reacted and ack_tg_id is not None:
+                await sender.set_reaction(ctx.chat_id, ack_tg_id, None)
             if mark_after is not None:
                 async with uow_factory() as uow:
                     await uow.threads.bump_last_answered(ctx.thread_id, mark_after)
                     await uow.commit()
     finally:
+        if media_dir is not None:
+            shutil.rmtree(media_dir, ignore_errors=True)
         if session_key is not None:
             try:
                 async with uow_factory() as uow:
