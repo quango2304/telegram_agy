@@ -36,10 +36,19 @@ produces an empty migration — then delete that file.
 > (`Can't locate revision identified by …`). Fix by re-stamping:
 > `UPDATE alembic_version SET version_num='<real head>';`
 
-## Changing configuration
+## Making a change take effect (dev)
 
-`docker compose ... up -d` — **not** `docker restart`, which does not re-read
-`env_file`.
+Two traps, both of which look like "my change did nothing":
+
+- **Only `bot` and `mcp` hot-reload.** They run under `watchfiles`; `worker` and
+  `beat` do not. After editing anything the worker runs — `runner.py`,
+  `prompt_builder.py`, `persona.py`, `agy_client_impl.py`, the repositories — run
+  `docker compose -f docker-compose.dev.yml restart worker`.
+- **Config changes need containers recreated**, not restarted:
+  `docker compose ... up -d`. `docker restart` does **not** re-read `env_file`.
+
+When a test result looks like the old behaviour, check these before debugging the
+code.
 
 ## Troubleshooting
 
