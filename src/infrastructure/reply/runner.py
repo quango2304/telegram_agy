@@ -81,6 +81,7 @@ class MediaPick:
     from_name: str
     caption: str
     file_name: str
+    kind: str = "photo"
 
 
 def run_generate_reply(task: Any, message_id: int) -> None:
@@ -233,13 +234,35 @@ _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _attachment_name(msg: Message) -> str:
-    """A predictable, shell-safe basename agy can reference in the workdir."""
+    """A predictable, shell-safe basename agy can reference in the workdir. The
+    extension is a guess from the stored mime and is corrected after download by
+    ``_sniff_ext`` — a sticker thumbnail may be webp or jpg whatever we assumed."""
     ext = ".jpg"
     if msg.media_file_name and "." in msg.media_file_name:
         ext = "." + _SAFE_NAME.sub("", msg.media_file_name.rsplit(".", 1)[1])[:8].lower()
     elif msg.media_mime and "/" in msg.media_mime:
         ext = "." + _SAFE_NAME.sub("", msg.media_mime.split("/", 1)[1])[:8].lower()
-    return f"anh_{msg.tg_message_id}{ext or '.jpg'}"
+    prefix = "sticker" if msg.media_kind == "sticker" else "anh"
+    return f"{prefix}_{msg.tg_message_id}{ext or '.jpg'}"
+
+
+def _sniff_ext(path: Path) -> str | None:
+    """The real image type from the file's magic bytes, or ``None``.
+
+    Telegram documents a sticker thumbnail as "``.WEBP`` or ``.JPG``" without
+    saying which, and a document's declared mime can be wrong. agy picks the
+    decoder by extension, so a jpeg named ``.webp`` simply fails to open."""
+    with path.open("rb") as fh:  # 12 bytes, not the whole 20 MB
+        head = fh.read(12)
+    if head[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return ".webp"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    return None
 
 
 async def _pick_media(
@@ -262,6 +285,9 @@ async def _pick_media(
 
     Tier 3 is time-boxed on purpose: without it, every reply in a photo-heavy
     group would re-download the last N images even when the question is "2 + 2".
+    Tier 3 also skips **stickers**: people spam them as punctuation, so a proximity
+    rule would burn the whole budget on decoration. A sticker is only fetched when
+    it *is* the trigger, or the trigger replies to it.
 
     Bounded by ``limit`` because every image costs real input tokens.
     """
@@ -273,12 +299,13 @@ async def _pick_media(
     picked: list[MediaPick] = []
     seen: set[int] = set()
 
-    def take(msg: Message | None) -> None:
+    def take(msg: Message | None, *, allow_sticker: bool = True) -> None:
         if (
             msg is not None
             and msg.id not in seen
             and msg.media_file_id
             and is_image_media(msg.media_kind, msg.media_mime)
+            and (allow_sticker or msg.media_kind != "sticker")
             and len(picked) < limit
         ):
             seen.add(msg.id)
@@ -289,6 +316,7 @@ async def _pick_media(
                     from_name=msg.from_name or "ai đó",
                     caption=msg.text,
                     file_name=_attachment_name(msg),
+                    kind=msg.media_kind or "photo",
                 )
             )
 
@@ -310,7 +338,7 @@ async def _pick_media(
         window = timedelta(seconds=window_seconds)
         for msg in reversed(history):
             if abs(newest - msg.sent_at) <= window:
-                take(msg)
+                take(msg, allow_sticker=False)
     return picked
 
 
@@ -325,14 +353,21 @@ async def _download_media(
         path = dest_dir / pick.file_name
         if not await sender.download_media(pick.file_id, path, max_bytes):
             continue
+        name = pick.file_name
+        real_ext = _sniff_ext(path)
+        if real_ext and not name.endswith(real_ext):
+            renamed = path.with_suffix(real_ext)
+            path.rename(renamed)
+            path, name = renamed, renamed.name
         out.append(
             (
                 path,
                 PromptAttachment(
-                    file_name=pick.file_name,
+                    file_name=name,
                     sender=pick.from_name,
                     tg_message_id=pick.tg_message_id,
                     caption=pick.caption,
+                    kind=pick.kind,
                 ),
             )
         )

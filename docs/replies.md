@@ -12,6 +12,11 @@ when:
 It never answers another bot (two bots in a group must not lock into an infinite
 exchange), an edited message, or a service message.
 
+> A **sticker cannot carry a mention**, so in a group a sticker-only message only
+> triggers when it replies to one of the bot's messages (in a private chat it
+> always does). When it does trigger, the bot actually looks at the sticker —
+> see [media.md](media.md).
+
 > **Group setup:** make the bot an admin, or disable privacy mode in BotFather.
 > A non-admin bot with default privacy only *receives* messages that mention or
 > reply to it, so stored history would be full of holes.

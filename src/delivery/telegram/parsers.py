@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from telegram import Chat, Message, Update
+from telegram import Chat, Message, Sticker, Update
 
 from src.application.ingest.commands import IncomingMessage
 
@@ -29,9 +29,9 @@ def resolve_media(message: Message) -> MediaRef | None:
 
     ``message.photo`` is a tuple of sizes, smallest → largest; the last entry is
     the full-resolution one. Only kinds a model can actually open are worth a
-    ``file_id``: stickers (Lottie/webm), video and audio are recorded by kind so
-    the history line stays honest, but are never downloaded (see
-    ``is_image_media``)."""
+    downloadable ``file_id``: video and audio are recorded by kind so the history
+    line stays honest, but are never downloaded (see ``is_image_media``).
+    Stickers are the exception — see ``resolve_sticker_media``."""
     if message.photo:
         return MediaRef(kind="photo", file_id=message.photo[-1].file_id, mime="image/jpeg")
     if message.document is not None:
@@ -53,17 +53,40 @@ def resolve_media(message: Message) -> MediaRef | None:
     if message.video_note is not None:
         return MediaRef(kind="video_note", file_id=message.video_note.file_id)
     if message.sticker is not None:
-        return MediaRef(kind="sticker", file_id=message.sticker.file_id)
+        return resolve_sticker_media(message.sticker)
     return None
+
+
+def resolve_sticker_media(sticker: Sticker) -> MediaRef:
+    """A sticker, pointed at something ``agy`` can actually open.
+
+    A static sticker is a ``.webp`` image and goes to the model as-is. Animated
+    (``.tgs`` — gzipped Lottie JSON) and video (``.webm``) stickers cannot be
+    opened, but Telegram ships a still ``thumbnail`` for both, so *that* file_id
+    is stored: ``media_file_id`` is only ever read to show ``agy`` a picture,
+    never to re-send the file, so swapping in the thumbnail costs nothing.
+
+    A sticker with no thumbnail keeps its own id but no mime, which leaves
+    ``is_image_media`` false — nothing is downloaded and the history line falls
+    back to the emoji."""
+    if sticker.is_animated or sticker.is_video:
+        thumb = sticker.thumbnail
+        if thumb is None:
+            return MediaRef(kind="sticker", file_id=sticker.file_id)
+        return MediaRef(kind="sticker", file_id=thumb.file_id, mime="image/webp")
+    return MediaRef(kind="sticker", file_id=sticker.file_id, mime="image/webp")
 
 
 def is_image_media(kind: str | None, mime: str | None) -> bool:
     """Only these are handed to ``agy``. A Telegram photo is always a JPEG; a
-    document counts when it declares an ``image/*`` mime. Audio is excluded
+    document counts when it declares an ``image/*`` mime; a sticker counts when
+    ``resolve_sticker_media`` found a still frame for it. Audio is excluded
     deliberately — verified that ``agy`` cannot transcribe ogg/opus or mp3."""
     if kind == "photo":
         return True
-    return kind == "document" and bool(mime) and str(mime).startswith("image/")
+    if kind in ("document", "sticker"):
+        return bool(mime) and str(mime).startswith("image/")
+    return False
 
 
 def resolve_text(message: Message) -> str:
@@ -80,7 +103,7 @@ def resolve_text(message: Message) -> str:
     if message.animation:
         return "[gif]"
     if message.sticker:
-        return f"[sticker: {message.sticker.emoji or '❓'}]"
+        return resolve_sticker_text(message.sticker)
     if message.voice:
         return "[voice]"
     if message.audio:
@@ -98,6 +121,16 @@ def resolve_text(message: Message) -> str:
     if message.dice:
         return f"[dice: {message.dice.value}]"
     return "[…]"
+
+
+def resolve_sticker_text(sticker: Sticker) -> str:
+    """The history line for a sticker. The set name is the only other written
+    signal Telegram gives (``cheems_by_stickers``, ``AnimeGirls``…), and it
+    survives even when the image itself was never fetched."""
+    emoji = sticker.emoji or "❓"
+    if sticker.set_name:
+        return f'[sticker: {emoji} — bộ "{sticker.set_name}"]'
+    return f"[sticker: {emoji}]"
 
 
 def resolve_author_name(message: Message) -> str | None:

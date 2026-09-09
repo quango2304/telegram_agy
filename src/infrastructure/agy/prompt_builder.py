@@ -40,6 +40,7 @@ class PromptAttachment:
     sender: str
     tg_message_id: int
     caption: str
+    kind: str = "photo"
 
 
 def _strip_handle(text: str, bot_username: str) -> str:
@@ -72,20 +73,39 @@ def _fmt_attachments(
     """The block that tells agy an image is sitting in its working directory.
 
     Empty string when nothing was attached, so the prompt keeps its old shape on
-    the (common) text-only path."""
+    the (common) text-only path.
+
+    A sticker gets its own wording: it carries no question and its history line is
+    only ``[sticker: 😂]``, so the "open it if the question is about the picture"
+    phrasing that works for photos would leave agy guessing at the joke."""
     if not attachments:
         return ""
     lines = []
+    has_sticker = False
     for a in attachments:
         caption = _strip_handle(a.caption, bot_username)
         if len(caption) > truncate:
             caption = caption[:truncate] + "…"
+        if a.kind == "sticker":
+            has_sticker = True
+            lines.append(f"- ./{a.file_name} — sticker {a.sender} gửi ({caption})")
+            continue
         note = f' (chú thích: "{caption}")' if caption and not caption.startswith("[") else ""
         lines.append(f"- ./{a.file_name} — ảnh của {a.sender}{note}")
+    sticker_note = (
+        "\nSticker là nội dung chính của tin nhắn đó (ảnh tĩnh của sticker; sticker "
+        "động thì là khung hình đại diện), nên PHẢI mở ra xem rồi mới bắt lời — "
+        "người ta gửi sticker thay cho câu nói."
+        if has_sticker
+        else ""
+    )
     return (
         "ẢNH ĐÍNH KÈM: trong thư mục hiện tại có sẵn file ảnh dưới đây. Nếu câu hỏi "
         "liên quan tới ảnh thì MỞ FILE RA XEM (đọc file bằng đường dẫn tương đối) "
-        "rồi trả lời theo đúng những gì thấy trong ảnh — đừng đoán mò.\n" + "\n".join(lines)
+        "rồi trả lời theo đúng những gì thấy trong ảnh — đừng đoán mò."
+        + sticker_note
+        + "\n"
+        + "\n".join(lines)
     )
 
 
