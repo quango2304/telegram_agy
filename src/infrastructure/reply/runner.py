@@ -136,7 +136,9 @@ async def _dispatch(task: Any, *, message_kind: str, ref_id: int) -> None:
             if ctx.ref_message_id is not None:
                 await _run_message_reply(settings, uow_factory, ctx)
             else:
-                await _run_reply(settings, uow_factory, ctx, pending=None, mark_after=None)
+                await _run_reply(
+                    settings, uow_factory, ctx, pending=None, mark_after=None, scheduled=True
+                )
         finally:
             # lock may have already expired — don't mask the real error
             with contextlib.suppress(LockError):
@@ -381,6 +383,7 @@ async def _run_reply(
     *,
     pending: list[PendingTrigger] | None,
     mark_after: int | None,
+    scheduled: bool = False,
 ) -> None:
     """Run ``agy``; ``agy`` itself sends every message via the ``send_chat_message``
     MCP tool (see src/delivery/mcp/server.py). This function never sends to Telegram
@@ -390,7 +393,9 @@ async def _run_reply(
     ``pending`` (message path) is the list of unanswered triggers this run must
     reply to, one reply each; ``mark_after`` is the ``messages.id`` to advance the
     thread's high-water mark to once agy has actually sent something. Both are
-    ``None`` on the scheduled path (the instruction plays the trigger)."""
+    ``None`` on the scheduled path (the instruction plays the trigger), where
+    ``scheduled`` is set instead so the prompt drops the "chờ tí" placeholder —
+    a timer-fired run has nobody waiting on it."""
     sender = TelegramSender(settings.telegram_bot_token)
     agy = AgyClient(settings)
     session_key: str | None = None
@@ -451,6 +456,7 @@ async def _run_reply(
             truncate_chars=settings.agy_message_truncate_chars,
             context_limit=settings.context_message_limit,
             extra_tools=bool(settings.composio_api_key),
+            scheduled=scheduled,
             pending=pending,
             attachments=attachments,
         )

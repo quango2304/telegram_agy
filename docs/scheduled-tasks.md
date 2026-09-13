@@ -11,6 +11,14 @@ someone had just sent it, with full history and memory in context.
 A scheduled reply is a plain message in the thread, not a Telegram reply to
 anything.
 
+**No "chờ tí" placeholder.** On the message path the prompt tells `agy` to send a
+quick "ok để tui lo" before a slow job so nobody is left staring at silence. A
+scheduled run has no such audience — the timer fired, nobody just typed — so the
+prompt *forbids* the placeholder there and asks for one message with the result.
+It has to say so explicitly rather than just stay quiet about it: the
+`send_chat_message` tool description itself advertises the "chờ tao xíu… xong
+rồi, đây" flow on every run, and the model follows it unless told not to.
+
 ## Rules
 
 - Times are interpreted in **Asia/Ho_Chi_Minh**. The prompt tells `agy` the current

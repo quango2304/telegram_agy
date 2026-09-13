@@ -27,7 +27,8 @@ Every message the bot can see is stored regardless of whether it triggers a repl
 
 The worker does **not** send anything to Telegram. It takes the per-thread lock,
 builds the prompt, and runs `agy`; `agy` then calls the **`send_chat_message`**
-MCP tool — once, or several times for a "chờ tí… xong rồi, đây" flow — and the
+MCP tool — once, or several times for a "chờ tí… xong rồi, đây" flow (message
+path only; see [scheduled-tasks.md](scheduled-tasks.md)) — and the
 `mcp` service (which holds the bot token) does the actual sending, replies the
 first message to the trigger, and stores each one as `is_bot_self`.
 
@@ -80,10 +81,13 @@ number, the wrong name, the wrong person — and wants to fix it in place rather
 leave the mistake sitting in the chat.
 
 It is deliberately **not** used to collapse the "chờ tí" placeholder into the
-answer. A long-running turn sends the placeholder and then a **separate** message
-with the result, so the chat keeps the natural shape of someone saying "hang on"
-and then coming back. The prompt says this explicitly; if you loosen that wording,
-expect the model to start editing placeholders again.
+answer. A long-running turn triggered by a message sends the placeholder and then
+a **separate** message with the result, so the chat keeps the natural shape of
+someone saying "hang on" and then coming back. The prompt says this explicitly;
+if you loosen that wording, expect the model to start editing placeholders again.
+
+A **scheduled** run skips the placeholder entirely — nobody is waiting on a timer
+— see [scheduled-tasks.md](scheduled-tasks.md).
 
 Only the bot's own messages, in the current thread, can be edited. Edits share the
 same 12-action runaway budget as sends.

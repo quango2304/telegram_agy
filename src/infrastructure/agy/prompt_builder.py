@@ -122,6 +122,7 @@ def build_prompt(
     truncate_chars: int,
     context_limit: int,
     extra_tools: bool = False,
+    scheduled: bool = False,
     pending: Sequence[PendingTrigger] | None = None,
     attachments: Sequence[PromptAttachment] | None = None,
 ) -> str:
@@ -135,7 +136,19 @@ def build_prompt(
     if len(trigger_body) > truncate_chars:
         trigger_body = trigger_body[:truncate_chars] + "…"
 
-    if len(pending) > 1:
+    if scheduled:
+        # A timer fired this run: nobody is sitting in the chat waiting, so the
+        # "hang on, I'm on it" placeholder the message path asks for is pure
+        # noise here. Say so explicitly — `send_chat_message`'s own docstring
+        # still advertises that flow and the model follows it otherwise.
+        closing = (
+            "Lượt này do LỊCH HẸN tới giờ tự chạy, KHÔNG phải ai vừa nhắn gì. "
+            f'Việc {trigger_name} hẹn trước: "{trigger_body}"\n'
+            "Cứ lẳng lặng làm cho xong rồi gọi `send_chat_message` để nhắn KẾT QUẢ "
+            "vào nhóm. KHÔNG nhắn mấy câu báo trước kiểu 'chờ tí', 'để tui lo', "
+            "'đang làm nha' — không ai đang ngồi chờ cả."
+        )
+    elif len(pending) > 1:
         pending_block = "\n".join(_fmt_pending(p, bot_username, truncate_chars) for p in pending)
         closing = (
             f"Có {len(pending)} tin đang chờ bạn trả lời (cũ → mới):\n"
@@ -162,6 +175,20 @@ def build_prompt(
             f'"{trigger_body}"'
         )
 
+    pace_block = (
+        # Scheduled runs have no audience waiting, so the placeholder is dropped
+        # and forbidden; see the `scheduled` closing above.
+        "QUAN TRỌNG: lượt này chạy theo lịch hẹn, không ai đang chờ — KHÔNG nhắn\n"
+        "mấy câu báo trước kiểu 'chờ tí', 'để tui lo'. Làm xong việc rồi mới gọi\n"
+        "`send_chat_message` để nhắn kết quả.\n"
+        if scheduled
+        else "QUAN TRỌNG: nếu việc cần nhiều bước hoặc mất thời gian (tra cứu, tải file,\n"
+        "chạy `composio`, đặt nhiều lịch...), hãy gọi `send_chat_message` MỘT lần\n"
+        "ngay từ đầu để báo 'ok để tui lo' (một lần chung cho cả lượt thôi) rồi mới\n"
+        "bắt tay làm — đừng để người ta chờ im ru. Làm xong thì gọi lại báo kết quả\n"
+        "bằng MỘT TIN MỚI (đừng sửa đè lên tin 'chờ tí' đó).\n"
+    )
+
     def assemble(lines: list[str], mem: str) -> str:
         history_block = "\n".join(lines) if lines else "(chưa có tin nào)"
         return (
@@ -176,11 +203,7 @@ def build_prompt(
             "Ai hỏi/nhắn gì thì reply thẳng vào tin của người đó: truyền\n"
             "`reply_to_tg_message_id` = id tin nhắn của họ khi gọi `send_chat_message`\n"
             "(id ghi ở phần dưới). Đừng nhắn khơi khơi.\n"
-            "QUAN TRỌNG: nếu việc cần nhiều bước hoặc mất thời gian (tra cứu, tải file,\n"
-            "chạy `composio`, đặt nhiều lịch...), hãy gọi `send_chat_message` MỘT lần\n"
-            "ngay từ đầu để báo 'ok để tui lo' (một lần chung cho cả lượt thôi) rồi mới\n"
-            "bắt tay làm — đừng để người ta chờ im ru. Làm xong thì gọi lại báo kết quả\n"
-            "bằng MỘT TIN MỚI (đừng sửa đè lên tin 'chờ tí' đó).\n"
+            f"{pace_block}"
             "Chỉ khi bạn LỠ nhắn sai (sai số liệu, sai tên, nhầm người) thì mới gọi\n"
             "`edit_chat_message` để sửa lại cho đúng — đừng dùng nó cho việc gì khác.\n\n"
             "Nếu người ta nhờ làm gì đó vào lúc khác hoặc định kỳ (vd 'mai nhắc...',\n"
