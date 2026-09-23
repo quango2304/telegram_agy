@@ -11,9 +11,23 @@ Three different mechanisms, often confused. They are deliberately decoupled.
 ## The prompt window
 
 Every run loads the newest `CONTEXT_MESSAGE_LIMIT` messages for the thread,
-oldest → newest, and renders them as `[name]: text` lines. The whole prompt is one
-argv string, so it is capped at `AGY_PROMPT_MAX_CHARS`: oldest history lines are
-dropped first, then the memory block is truncated.
+oldest → newest, and renders them as
+`(id=tg_message_id) [time] [name (@username)] (trả lời X): text` lines:
+
+- `id` is the Telegram message id, on **every** line, not just the one named in
+  the closing instruction — `agy` can `reply_to_tg_message_id` onto any message
+  in the window, e.g. "reply to what Khoa said earlier", not only the newest
+  trigger.
+- `(@username)` shows only when Telegram gave that sender a username, and never
+  for the bot's own lines.
+- the local timestamp (`sent_at`, Asia/Ho_Chi_Minh) always shows.
+- the "trả lời X" part only appears when the message was a Telegram reply to
+  another message that is *itself inside this same fetched window* (resolved by
+  `tg_message_id`, not a separate DB lookup) — a reply to something older that
+  already scrolled out is rendered with no reply note, rather than guessed at.
+
+The whole prompt is one argv string, so it is capped at `AGY_PROMPT_MAX_CHARS`:
+oldest history lines are dropped first, then the memory block is truncated.
 
 Individual messages longer than `AGY_MESSAGE_TRUNCATE_CHARS` are cut with an
 ellipsis.

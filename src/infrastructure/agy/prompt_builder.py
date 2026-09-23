@@ -5,6 +5,12 @@ chat history (old -> new), then the message this run must answer — named
 explicitly, because rapid triggers mean the trigger is not always the last
 history line. The whole thing is one argv entry, so it is capped: oldest
 history lines are dropped first, then the memory block is truncated.
+
+Each history line carries a local timestamp, its Telegram message id (so `agy`
+can reply-thread onto *any* line, not just the one named in the closing
+instruction), the sender's @username when Telegram gave one, and — when the
+message was a reply to another message inside the same fetched window — the
+name of who it replied to. See ``HistoryLine``.
 """
 
 from __future__ import annotations
@@ -20,6 +26,15 @@ class HistoryLine:
     name: str
     text: str
     is_bot_self: bool
+    sent_at_local: str
+    tg_message_id: int
+    # Telegram @username, if the sender has one set. ``None`` for the bot's own
+    # lines and for users without a username — never guessed.
+    username: str | None = None
+    # Display name of the message this one replied to, if that target is itself
+    # within the fetched history window; ``None`` if it's not a reply, or the
+    # target scrolled out of the window (recent-N fetch, not the full thread).
+    reply_to_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -54,10 +69,12 @@ def _strip_handle(text: str, bot_username: str) -> str:
 
 def _fmt_line(line: HistoryLine, bot_username: str, truncate: int) -> str:
     name = BOT_LABEL if line.is_bot_self else (line.name or "ai đó")
+    handle = f" (@{line.username})" if line.username and not line.is_bot_self else ""
     body = _strip_handle(line.text, bot_username)
     if len(body) > truncate:
         body = body[:truncate] + "…"
-    return f"[{name}]: {body}"
+    reply_note = f" (trả lời {line.reply_to_name})" if line.reply_to_name else ""
+    return f"(id={line.tg_message_id}) [{line.sent_at_local}] [{name}{handle}]{reply_note}: {body}"
 
 
 def _fmt_pending(p: PendingTrigger, bot_username: str, truncate: int) -> str:

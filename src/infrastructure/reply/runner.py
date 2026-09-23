@@ -46,6 +46,7 @@ from src.infrastructure.db.uow import SqlAlchemyUnitOfWork
 from src.infrastructure.schedule.cron import to_local_str
 from src.infrastructure.telegram.sender import TelegramSender
 from src.shared.logger import get_logger
+from src.shared.persona import BOT_LABEL
 
 logger = get_logger(__name__)
 
@@ -407,7 +408,27 @@ async def _run_reply(
     try:
         async with uow_factory() as uow:
             rows = await uow.messages.last_n(ctx.thread_id, settings.context_message_limit)
-            history = [HistoryLine(r.from_name or "ai đó", r.text, r.is_bot_self) for r in rows]
+            # Resolve "replied to" names within this same window only — the
+            # target may have scrolled out of the last-N fetch, in which case
+            # we just say nothing rather than guess.
+            name_by_tg_id = {
+                r.tg_message_id: (BOT_LABEL if r.is_bot_self else (r.from_name or "ai đó"))
+                for r in rows
+            }
+            history = [
+                HistoryLine(
+                    r.from_name or "ai đó",
+                    r.text,
+                    r.is_bot_self,
+                    to_local_str(r.sent_at),
+                    r.tg_message_id,
+                    username=r.from_username,
+                    reply_to_name=name_by_tg_id.get(r.reply_to_tg_message_id)
+                    if r.reply_to_tg_message_id is not None
+                    else None,
+                )
+                for r in rows
+            ]
             memory = await uow.memories.get(ctx.chat_id)
             memory_text = memory.content if memory else None
             media_rows = await _pick_media(
