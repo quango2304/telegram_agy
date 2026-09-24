@@ -24,7 +24,7 @@ Everything else has a working default for local Docker.
 | Key | Default | Notes |
 |---|---|---|
 | `AGY_MODEL` | `gemini-3.8-flash-low` | `agy models` lists options. Use `-medium`/`-high` if Composio is enabled. |
-| `AGY_TIMEOUT_SECONDS` | 180 | Celery soft/hard limits are derived from this (+120 / +180). |
+| `AGY_TIMEOUT_SECONDS` | 300 | Celery soft/hard limits are derived from this (+120 / +180). |
 | `AGY_PROMPT_MAX_CHARS` | 60000 | Prompt cap; oldest history is dropped first, then memory truncated. |
 | `AGY_MESSAGE_TRUNCATE_CHARS` | 2000 | Per-message cut in the history block. |
 | `SESSION_TTL_SECONDS` | 600 | Lifetime of a run's `session_key`. |
