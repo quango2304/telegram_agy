@@ -56,6 +56,11 @@ UowFactory = Callable[[], IUnitOfWork]
 # Newest N unanswered triggers a single locked run will answer in one agy pass.
 _MAX_PENDING_PER_RUN = 10
 
+# The one retry after a transient upstream error (see _run_reply): wait this
+# long first, and skip it when less than _RETRY_MIN_SECONDS of budget is left.
+_RETRY_DELAY_SECONDS = 5
+_RETRY_MIN_SECONDS = 60
+
 
 @dataclass(frozen=True)
 class TriggerContext:
@@ -105,7 +110,7 @@ async def _dispatch(task: Any, *, message_kind: str, ref_id: int) -> None:
     try:
         ctx = await _resolve_context(uow_factory, message_kind, ref_id)
         if ctx is None:
-            logger.warning("trigger gone", extra={"kind": message_kind, "ref_id": ref_id})
+            logger.warning("trigger gone kind=%s ref_id=%s", message_kind, ref_id)
             return
 
         # Pre-lock short-circuit: the mark only moves forward, so if an earlier
@@ -147,6 +152,13 @@ async def _dispatch(task: Any, *, message_kind: str, ref_id: int) -> None:
     finally:
         await engine.dispose()
         redis_client.close()
+
+
+async def _sent_count(uow_factory: UowFactory, session_key: str) -> int:
+    """How many send/edit actions agy has made through this run's session."""
+    async with uow_factory() as uow:
+        active = await uow.sessions.get_active(session_key)
+        return active.sent_count if active is not None else 0
 
 
 async def _already_covered(uow_factory: UowFactory, thread_id: int, ref_message_id: int) -> bool:
@@ -482,30 +494,80 @@ async def _run_reply(
             attachments=attachments,
         )
 
-        result = await agy.run(prompt, attachments=attachment_paths)
-
-        async with uow_factory() as uow:
-            active = await uow.sessions.get_active(session_key)
-            sent = active.sent_count if active is not None else 0
         n_pending = len(pending) if pending else 0
-        if not result.ok:
+        label = f"thread_id={ctx.thread_id}"
+        logger.info(
+            "reply start %s kind=%s pending=%s trigger_tg_ids=%s history=%s memory_chars=%s "
+            "media=%s prompt_chars=%s",
+            label,
+            "scheduled" if scheduled else "message",
+            n_pending,
+            [p.tg_message_id for p in pending] if pending else [ctx.trigger_tg_id],
+            len(history),
+            len(memory_text or ""),
+            len(attachments),
+            len(prompt),
+        )
+
+        result = await agy.run(prompt, attachments=attachment_paths, label=label)
+        sent = await _sent_count(uow_factory, session_key)
+
+        # One retry for an upstream blip (Gemini 503/429), and only when nothing
+        # reached the chat yet — otherwise the rerun would repeat what was sent.
+        # It gets what is left of the budget so the whole task stays under the
+        # Celery soft limit.
+        remaining = settings.agy_timeout_seconds - int(result.elapsed_s)
+        if result.error == "transient" and sent == 0 and remaining >= _RETRY_MIN_SECONDS:
+            logger.warning(
+                "agy transient failure; retrying once %s wait=%ss budget=%ss",
+                label,
+                _RETRY_DELAY_SECONDS,
+                remaining,
+            )
+            await asyncio.sleep(_RETRY_DELAY_SECONDS)
+            result = await agy.run(
+                prompt,
+                attachments=attachment_paths,
+                timeout_s=remaining - _RETRY_DELAY_SECONDS,
+                label=f"{label} retry=1",
+            )
+            sent = await _sent_count(uow_factory, session_key)
+
+        if not result.ok and sent > 0:
+            # The worst case for the user: typically a "chờ tí" went out and
+            # then the run died. 👀 stays and the mark is not moved, so the next
+            # trigger in this thread picks these messages up again.
             logger.error(
-                "agy failed; thread left silent thread_id=%s pending=%s",
-                ctx.thread_id,
+                "agy failed after sending; thread left hanging %s error=%s pending=%s sent=%s "
+                "elapsed=%.0fs",
+                label,
+                result.error,
                 n_pending,
+                sent,
+                result.elapsed_s,
+            )
+        elif not result.ok:
+            logger.error(
+                "agy failed; thread left silent %s error=%s pending=%s elapsed=%.0fs",
+                label,
+                result.error,
+                n_pending,
+                result.elapsed_s,
             )
         elif sent == 0:
             logger.warning(
-                "agy called no send tool; thread left silent thread_id=%s pending=%s",
-                ctx.thread_id,
+                "agy called no send tool; thread left silent %s pending=%s elapsed=%.0fs",
+                label,
                 n_pending,
+                result.elapsed_s,
             )
         else:
             logger.info(
-                "reply sent thread_id=%s pending=%s sent=%s",
-                ctx.thread_id,
+                "reply sent %s pending=%s sent=%s elapsed=%.0fs",
+                label,
                 n_pending,
                 sent,
+                result.elapsed_s,
             )
             # The reply itself is now the acknowledgement, so drop the 👀. On a
             # failure it deliberately stays: it is the only trace that the bot
@@ -525,5 +587,5 @@ async def _run_reply(
                     await uow.sessions.delete(session_key)
                     await uow.commit()
             except Exception:
-                logger.warning("session cleanup failed", extra={"session_key": session_key})
+                logger.warning("session cleanup failed thread_id=%s", ctx.thread_id)
         await sender.close()

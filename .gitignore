@@ -12,3 +12,6 @@ celerybeat-schedule*
 # editor / local tooling
 .idea/
 .mcp.json
+
+# per-developer Claude notes (deploy host etc.)
+CLAUDE.local.md

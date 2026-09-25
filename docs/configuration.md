@@ -66,3 +66,9 @@ See [media.md](media.md).
 ## Logging
 
 `LOG_LEVEL` (default `INFO`), `LOG_FORMAT` (`plain` or `json`).
+
+`LOG_DRIVER` is read by **`docker-compose.yml`**, not by the app: the Docker log
+driver for the app services. Default `json-file`; set **`journald` on the VPS**.
+json-file logs are deleted with the container, so every deploy used to wipe the
+only record of failed runs. Docker Desktop has no journald, hence the default.
+See [operations.md](operations.md) for reading old logs.

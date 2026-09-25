@@ -37,8 +37,23 @@ A runaway guard caps a single run at **12 send/edit actions**.
 ### Silence is deliberate
 
 If `agy` fails, times out, or never calls a send tool, **the thread stays silent**.
-There is no worker-side fallback message. Look for `agy called no send tool` or
-`agy failed` in the worker log. This is a chosen trade-off: no fake reassurance.
+There is no worker-side fallback message. This is a chosen trade-off: no fake
+reassurance. The worker log says which case it was — see
+[operations.md](operations.md#why-didnt-the-bot-answer).
+
+A run that **fails after already sending something** — typically "chờ tí" and
+then a timeout — is a failure too, not a reply: the 👀 stays and the thread's
+high-water mark does not move, so the next trigger in that thread picks those
+messages up again. (Before this was fixed, such a run cleared 👀 and marked the
+messages answered, so it looked like a success everywhere while the user was
+left with a promise and nothing after it.)
+
+### One retry for upstream blips
+
+If `agy` exits with a transient upstream error (Gemini `UNAVAILABLE` / 5xx /
+429) **and nothing was sent yet**, the worker waits 5s and runs it once more with
+whatever is left of `AGY_TIMEOUT_SECONDS` (skipped under 60s). Nothing is retried
+after a send, because the rerun would repeat it.
 
 ## Batching rapid triggers
 

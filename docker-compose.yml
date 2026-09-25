@@ -9,6 +9,16 @@ x-app: &app
   image: telegram-agy
   restart: always
   env_file: [.env]
+  # On the VPS set LOG_DRIVER=journald in .env. json-file logs are deleted with
+  # the container, so every deploy (`up -d --build` recreates) wiped the only
+  # record of failed runs; the host journal survives, and `docker compose logs`
+  # still works via Docker's dual-logging cache. Older runs:
+  #   journalctl -t telegram_agy-worker-1 --since "2 days ago"
+  # Defaults to json-file because Docker Desktop has no journald.
+  logging:
+    driver: ${LOG_DRIVER:-json-file}
+    options:
+      tag: "{{.Name}}"
 
 services:
   db:
