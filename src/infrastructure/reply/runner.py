@@ -535,8 +535,10 @@ async def _run_reply(
 
         if not result.ok and sent > 0:
             # The worst case for the user: typically a "chờ tí" went out and
-            # then the run died. 👀 stays and the mark is not moved, so the next
-            # trigger in this thread picks these messages up again.
+            # then the run died. 👀 stays as the trace of the failure, but the
+            # mark still moves (below): re-running the request on the next
+            # trigger meant another "chờ tí" and, for the slow asks that cause
+            # this, usually another timeout.
             logger.error(
                 "agy failed after sending; thread left hanging %s error=%s pending=%s sent=%s "
                 "elapsed=%.0fs",
@@ -574,10 +576,13 @@ async def _run_reply(
             # saw the message at all (the thread stays silent by design).
             if reacted and ack_tg_id is not None:
                 await sender.set_reaction(ctx.chat_id, ack_tg_id, None)
-            if mark_after is not None:
-                async with uow_factory() as uow:
-                    await uow.threads.bump_last_answered(ctx.thread_id, mark_after)
-                    await uow.commit()
+        # Anything that reached the chat counts as answered, even if the run
+        # then failed — the next trigger must not redo it. Only a run that sent
+        # nothing leaves these messages for the next one to pick up.
+        if sent > 0 and mark_after is not None:
+            async with uow_factory() as uow:
+                await uow.threads.bump_last_answered(ctx.thread_id, mark_after)
+                await uow.commit()
     finally:
         if media_dir is not None:
             shutil.rmtree(media_dir, ignore_errors=True)

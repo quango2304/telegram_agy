@@ -42,11 +42,12 @@ reassurance. The worker log says which case it was — see
 [operations.md](operations.md#why-didnt-the-bot-answer).
 
 A run that **fails after already sending something** — typically "chờ tí" and
-then a timeout — is a failure too, not a reply: the 👀 stays and the thread's
-high-water mark does not move, so the next trigger in that thread picks those
-messages up again. (Before this was fixed, such a run cleared 👀 and marked the
-messages answered, so it looked like a success everywhere while the user was
-left with a promise and nothing after it.)
+then a timeout — is logged as a failure (`agy failed after sending`) and the 👀
+stays. Its messages **are** still marked answered: anything that reached the
+chat counts, so the next trigger does not redo the request. Retrying it meant
+another "chờ tí" and, for the slow asks that cause this, usually another
+timeout. Only a run that sent **nothing** leaves its messages unanswered for the
+next trigger to pick up.
 
 ### One retry for upstream blips
 
@@ -65,7 +66,8 @@ than queueing a separate `agy` run per message:
 2. The task that wins the Redis lock gathers **every unanswered trigger** for the
    thread — newest `_MAX_PENDING_PER_RUN` (**10**) — and answers them all in one
    `agy` run, one reply each, with the right `reply_to_tg_message_id` per message.
-3. It then advances the thread's high-water mark (`chat_threads.last_answered_message_id`)
+3. Once `agy` has sent at least one message (even if the run then fails), it
+   advances the thread's high-water mark (`chat_threads.last_answered_message_id`)
    past those messages, so the sibling tasks queued for them become no-ops
    (`trigger already covered`).
 
