@@ -56,6 +56,9 @@ def tool_usage_guide(*, composio: bool, history_limit: int) -> str:
         "trước rồi mới trả lời — nói ra con số / thông tin thật kèm thời điểm, đừng "
         "phịa từ trí nhớ. Chuyện tán dóc, cà khịa, ý kiến cá nhân thì khỏi tra.",
         "GỬI FILE: đặt file vào /outbox/ rồi gọi tool `send_chat_file` ĐÚNG MỘT LẦN cho mỗi file.",
+        "SÁCH ĐIỆN TỬ: ai xin ebook/epub thì `search_ebooks` → `download_ebook` → "
+        "`send_chat_file`. Chỉ có sách public domain; không có thì nói không có, "
+        "đừng đi tìm ở trang lậu.",
         "TÌM LẠI CHUYỆN CŨ: lịch sử chat kèm dưới đây chỉ là mấy tin gần nhất. Ai "
         "nhắc chuyện cũ hơn ('hôm trước ai gửi cái link đó', 'thằng nào nói vụ kia') "
         "thì gọi tool `search_history` với vài TỪ KHOÁ (đừng gõ cả câu hỏi) để tra "

@@ -1,5 +1,5 @@
-"""MCP server for ``agy``: send chat messages, persist per-thread memory, and
-schedule per-thread tasks — all keyed by the opaque per-run ``session_key``.
+"""MCP server for ``agy``: send chat messages, persist per-thread memory,
+fetch free ebooks, and schedule per-thread tasks — all keyed by the opaque per-run ``session_key``.
 
 SDK notes (mcp 2.1.1, verified against the installed package):
 - ``FastMCP`` is now ``MCPServer`` (``from mcp.server import MCPServer``).
@@ -32,6 +32,7 @@ from src.domain.interfaces.unit_of_work import IUnitOfWork
 from src.infrastructure.config import get_settings
 from src.infrastructure.db.engine import build_engine, build_session_factory
 from src.infrastructure.db.uow import SqlAlchemyUnitOfWork
+from src.infrastructure.ebooks import catalog as ebook_catalog
 from src.infrastructure.schedule.cron import (
     ScheduleError,
     next_cron_run,
@@ -361,6 +362,68 @@ async def send_chat_file(
             reply_to,
         )
     return "Đã gửi file."
+
+
+@mcp.tool()
+async def search_ebooks(session_key: str, query: str, lang: str = "", limit: int = 0) -> str:
+    """Tìm sách điện tử MIỄN PHÍ, HỢP PHÁP (public domain) để tải về.
+
+    Nguồn: Standard Ebooks (bản đẹp nhất), Project Gutenberg, Internet Archive
+    (chỉ bản scan thư viện public domain). Chỉ có sách cũ hết bản quyền — sách
+    mới còn bản quyền sẽ KHÔNG có, cứ nói thẳng là không tìm được, đừng lấy ở
+    nguồn khác. Kết quả có `book_id` để truyền cho `download_ebook`.
+
+    Args:
+        session_key: khoá phiên được cung cấp trong prompt. Bắt buộc.
+        query: tên sách và/hoặc tác giả (vd "pride and prejudice austen").
+            Tên tiếng Anh/gốc cho kết quả tốt hơn tên dịch; giữ đúng dấu của
+            tên gốc ("misérables", không phải "miserables").
+        lang: (tuỳ chọn) mã ngôn ngữ 2 chữ (vd "en", "fr", "vi").
+        limit: (tuỳ chọn) số kết quả tối đa mỗi nguồn (mặc định 5).
+    """
+    async with _uow() as uow:
+        await _resolve_thread(uow, session_key)
+    n = 5 if limit <= 0 else min(limit, 10)
+    try:
+        books, errors = await ebook_catalog.search(query, lang, n)
+    except ebook_catalog.EbookError as exc:
+        raise ToolError(str(exc)) from exc
+    lines = [b.line() for b in books]
+    if errors:
+        lines.append(f"(nguồn lỗi: {'; '.join(errors)})")
+    if not books:
+        lines.insert(0, f'Không tìm thấy sách miễn phí nào khớp "{query}".')
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def download_ebook(session_key: str, book_id: str, format: str = "epub") -> str:
+    """Tải một cuốn sách (lấy `book_id` từ `search_ebooks`) vào /outbox/.
+
+    Trả về đường dẫn file; sau đó gọi `send_chat_file` với đường dẫn đó để gửi.
+
+    Args:
+        session_key: khoá phiên được cung cấp trong prompt. Bắt buộc.
+        book_id: đúng chuỗi `book_id` mà search_ebooks trả về
+            (vd "gutenberg:1342", "se:jane-austen/pride-and-prejudice").
+        format: "epub" (mặc định), "azw3" (Kindle), "kepub" (Kobo, chỉ Standard
+            Ebooks), "pdf" (chỉ Internet Archive), "txt" (chỉ Gutenberg).
+    """
+    async with _uow() as uow:
+        thread_id = await _resolve_thread(uow, session_key)
+    settings = get_settings()
+    try:
+        path = await ebook_catalog.download(
+            book_id, format, settings.outbox_dir, settings.telegram_max_file_mb
+        )
+    except ebook_catalog.EbookError as exc:
+        raise ToolError(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.error("ebook download failed", extra={"thread_id": thread_id, "err": str(exc)})
+        raise ToolError(f"Tải sách lỗi: {type(exc).__name__}") from exc
+    with contextlib.suppress(Exception):
+        logger.info("ebook downloaded thread_id=%s book_id=%s file=%s", thread_id, book_id, path)
+    return f"Đã tải: {path}"
 
 
 @mcp.tool()

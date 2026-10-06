@@ -22,6 +22,8 @@ anywhere but local dev.
 | `send_chat_message(session_key, text, reply_to_tg_message_id=0)` | Send a message to the current thread. Callable several times per run. Long text is auto-chunked. Returns the Telegram message ids it sent. |
 | `edit_chat_message(session_key, tg_message_id, text)` | Correct a message the bot itself already sent in this thread (wrong number, wrong name). **Not** for turning a "chờ tí" placeholder into the answer — that is a new message. |
 | `send_chat_file(session_key, file_path, caption="")` | Send a file. Paths must be under `/outbox`; files over `TELEGRAM_MAX_FILE_MB` (50) are rejected; the file is deleted after sending. |
+| `search_ebooks(session_key, query, lang="", limit=0)` | Search free, public-domain ebooks (Standard Ebooks, Gutenberg, Internet Archive). Returns `book_id`s. See [composio-and-files.md](composio-and-files.md#free-ebooks). |
+| `download_ebook(session_key, book_id, format="epub")` | Download a `book_id` into `/outbox` and return the path; the agent then calls `send_chat_file`. Formats: `epub`, `azw3`, `kepub` (SE), `pdf` (IA), `txt` (Gutenberg). |
 | `update_memory(session_key, memory)` | Overwrite the per-chat long-term note. Send the full merged text — it replaces, never appends. Soft budget 3000 chars (prompt), hard cap 8000 (tool). |
 | `search_history(session_key, query, limit=0)` | Keyword-search older messages of this chat, past the prompt window. |
 | `schedule_task(session_key, instruction, when="", cron="", requested_by="")` | Schedule a one-off or recurring task for this thread. |
