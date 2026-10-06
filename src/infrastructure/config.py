@@ -34,7 +34,7 @@ class Settings:
     celery_result_backend: str
     redis_url: str
 
-    agy_model: str = "gemini-3.8-flash-low"
+    agy_model: str = "claude-sonnet-5-5-medium"
     agy_timeout_seconds: int = 300
     agy_binary: str = "/usr/local/bin/agy"
     agy_user: str = "agy"

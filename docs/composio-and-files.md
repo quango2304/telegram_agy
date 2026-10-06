@@ -27,8 +27,9 @@ must be a `uak_` user key.
 
 ### Notes
 
-- **Use `AGY_MODEL=gemini-3.8-flash-medium` (or `-high`)** when Composio is on.
-  `-low` is fast but drops multi-step tool tasks too often. Expect 40–180s for a
+- **Use a `-medium` or `-high` model** (the default `claude-sonnet-5-5-medium`
+  is fine) when Composio is on. `-low` is fast but drops multi-step tool tasks
+  too often. Expect 40–180s for a
   search-download-send reply.
 - Typical flow: *"find X in my Drive and send it"* → `composio search` →
   `composio execute GOOGLEDRIVE_DOWNLOAD_FILE` → `curl` the returned URL into

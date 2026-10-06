@@ -23,7 +23,7 @@ Everything else has a working default for local Docker.
 
 | Key | Default | Notes |
 |---|---|---|
-| `AGY_MODEL` | `gemini-3.8-flash-low` | `agy models` lists options. Use `-medium`/`-high` if Composio is enabled. |
+| `AGY_MODEL` | `claude-sonnet-5-5-medium` | `agy models` lists options (Claude Sonnet/Opus 5.5, Gemini 3.x Flash, Gemini 3.1 Pro; effort suffix `-low`/`-medium`/`-high`). Avoid `-low` if Composio is enabled. Run it as the `agy` user inside the container — as root it says "Please sign in". |
 | `AGY_TIMEOUT_SECONDS` | 300 | Celery soft/hard limits are derived from this (+120 / +180). |
 | `AGY_PROMPT_MAX_CHARS` | 60000 | Prompt cap; oldest history is dropped first, then memory truncated. |
 | `AGY_MESSAGE_TRUNCATE_CHARS` | 2000 | Per-message cut in the history block. |

@@ -26,8 +26,12 @@ RUN apt-get update -qq \
  && rm -rf /var/lib/apt/lists/*
 
 # --- agy CLI --- (linux_arm64 / linux_amd64; -d <dir> is the only supported flag)
-RUN curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- -d /usr/local/bin \
- && agy --help > /dev/null
+# install.sh always fetches the latest build, but Docker caches this layer
+# forever. Bump AGY_CLI_REFRESH to force a reinstall (`agy --version` to check).
+ARG AGY_CLI_REFRESH=2026-10-06
+RUN echo "agy refresh $AGY_CLI_REFRESH" \
+ && curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- -d /usr/local/bin \
+ && agy --version
 
 # --- Composio CLI (optional; only used when COMPOSIO_API_KEY is set) ---
 RUN curl -fsSL https://composio.dev/install | \
