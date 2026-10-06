@@ -16,6 +16,7 @@ dependencies = [
   "dependency-injector>=4.42",
   "dynaconf>=3.2",
   "croniter>=6.2.4",
+  "httpx>=0.28",
 ]
 
 [dependency-groups]
