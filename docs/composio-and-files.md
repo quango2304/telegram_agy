@@ -27,7 +27,7 @@ must be a `uak_` user key.
 
 ### Notes
 
-- **Use a `-medium` or `-high` model** (the default `claude-sonnet-5-5-medium`
+- **Use a `-medium` or `-high` model** (the default `gemini-3.8-flash-high`
   is fine) when Composio is on. `-low` is fast but drops multi-step tool tasks
   too often. Expect 40–180s for a
   search-download-send reply.

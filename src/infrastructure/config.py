@@ -34,7 +34,7 @@ class Settings:
     celery_result_backend: str
     redis_url: str
 
-    agy_model: str = "claude-sonnet-5-5-medium"
+    agy_model: str = "gemini-3.8-flash-high"
     agy_timeout_seconds: int = 300
     agy_binary: str = "/usr/local/bin/agy"
     agy_user: str = "agy"
@@ -101,7 +101,7 @@ def get_settings() -> Settings:
         celery_broker_url=_str("CELERY_BROKER_URL", "redis://redis:6379/0"),
         celery_result_backend=_str("CELERY_RESULT_BACKEND", "redis://redis:6379/1"),
         redis_url=_str("REDIS_URL", "redis://redis:6379/2"),
-        agy_model=_str("AGY_MODEL", "gemini-3.8-flash-low"),
+        agy_model=_str("AGY_MODEL", "gemini-3.8-flash-high"),
         agy_timeout_seconds=_int("AGY_TIMEOUT_SECONDS", 300),
         agy_binary=_str("AGY_BINARY", "/usr/local/bin/agy"),
         agy_user=_str("AGY_USER", "agy"),
