@@ -52,6 +52,18 @@ Two things that look right and are not:
 5. A transient-error retry (see [replies.md](replies.md#one-retry-for-upstream-blips))
    reuses the same model and what is left of *its* budget.
 
+## Persona across models
+
+Both models get the same persona (`src/shared/persona.py`). The original one-line
+"giọng hài hước, châm biếm nhẹ" was enough for Gemini, but Claude Sonnet read it
+as a polite assistant: users found it humourless (that is why prod went back from
+`claude-sonnet-5-5-medium` to Gemini on 2026-10-07), and it closed analyses with
+boilerplate ("số liệu chỉ tham khảo, quyết định là của sếp"). The persona now
+spells it out: a cheeky friend, not an assistant; at least one joke per reply even
+in serious analysis; banned assistant phrases and closing disclaimers; and the
+limits (no looks / family / region / gender jokes, ease off when someone is
+genuinely upset). Re-test **both** models after editing it.
+
 ## When Jev fails
 
 Routing **never blocks a reply**. Any router failure (no key, timeout, HTTP
