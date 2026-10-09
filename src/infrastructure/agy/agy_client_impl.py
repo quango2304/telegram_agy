@@ -209,6 +209,7 @@ class AgyClient:
         attachments: Sequence[Path] = (),
         *,
         timeout_s: int | None = None,
+        model: str | None = None,
         label: str = "",
     ) -> AgyResult:
         """``attachments`` are copied into the run's workdir under their own
@@ -216,9 +217,11 @@ class AgyClient:
         opens them with its own Read tool. They die with the workdir.
 
         ``timeout_s`` overrides ``agy_timeout_seconds`` (a retry passes what is
-        left of the budget). ``label`` (e.g. ``thread_id=5``) prefixes every log
+        left of the budget); ``model`` overrides ``agy_model`` (the model router's
+        pick). ``label`` (e.g. ``thread_id=5``) prefixes every log
         line of this run so they can be grepped together."""
         limit_s = timeout_s or self._s.agy_timeout_seconds
+        model = model or self._s.agy_model
         try:
             pw = pwd.getpwnam(self._s.agy_user)
         except KeyError:
@@ -252,7 +255,7 @@ class AgyClient:
                 "-p",
                 prompt,
                 "--model",
-                self._s.agy_model,
+                model,
                 "--output-format",
                 "stream-json",
                 "--print-timeout",
@@ -261,8 +264,9 @@ class AgyClient:
             ]
             trace = _RunTrace(label)
             logger.info(
-                "agy start %s timeout=%ss prompt_chars=%s attachments=%s",
+                "agy start %s model=%s timeout=%ss prompt_chars=%s attachments=%s",
                 label,
+                model,
                 limit_s,
                 len(prompt),
                 len(attachments),

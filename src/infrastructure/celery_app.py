@@ -28,8 +28,9 @@ celery_app.conf.update(
     # Backstop: if agy (or a wedged composio child) escapes the in-process
     # timeout, the soft limit raises inside the task so its finally-blocks run,
     # and the hard limit SIGKILLs the pool child.
-    task_soft_time_limit=_settings.agy_timeout_seconds + 120,
-    task_time_limit=_settings.agy_timeout_seconds + 180,
+    # Sized from the longest per-model budget (Pro gets more, see model_router).
+    task_soft_time_limit=_settings.agy_timeout_max + 120,
+    task_time_limit=_settings.agy_timeout_max + 180,
     task_routes={
         "tasks.generate_reply": {"queue": "replies"},
         "tasks.run_scheduled": {"queue": "replies"},

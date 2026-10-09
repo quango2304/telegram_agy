@@ -76,7 +76,10 @@ code.
 | `chat message edited` | an `edit_chat_message` landed |
 | `reply sent … pending=N sent=M` | run finished; N triggers answered with M actions |
 | `reply start thread_id=… pending=N trigger_tg_ids=[…] … prompt_chars=N` | a locked run is about to call `agy` |
-| `agy start thread_id=… timeout=Ns` | the `agy` subprocess is launching |
+| `model routed thread_id=… model=… by=jev\|off\|timeout\|http_<status>\|http_error\|bad_answer p_complex=… confidence=… timeout=Ns router_ms=… jev=… jev_id=gen-dec-… context_lines=N asks=[…]` | which model this run uses and why, one per run. `by=jev` is Jev's pick; anything else fell back to `AGY_MODEL`. `asks=` is the message text Jev judged. See [model-routing.md](model-routing.md#judging-the-picks). |
+| `model router http error … status=… body=…` / `model router request failed` / `model router bad answer` | the Jev call failed; the run continues on `AGY_MODEL`. `status=401`: bad `OPENROUTER_API_KEY`. `402`: OpenRouter credits ran out. |
+| `[httpx] HTTP Request: POST https://openrouter.ai/api/alpha/decisions …` | httpx's own INFO line for the Jev call, harmless |
+| `agy start thread_id=… model=… timeout=Ns` | the `agy` subprocess is launching |
 | `agy step thread_id=… #i DONE tool:<name> {params} took=Xs at=+Ys` | one step finished (model turns log as `agent_response … tokens=N`) |
 | `agy run finished thread_id=… outcome=ok\|print_timeout\|background_timeout\|timeout\|transient\|nonzero\|no_result\|unsuccessful …` | one line per `agy` run: wall time, tools used, tokens, `conversation_id`; on failure also `stuck=` and `stderr=` |
 | `agy transient failure; retrying once` | upstream 5xx/429 with nothing sent; one retry follows |
@@ -93,7 +96,7 @@ Every run ends in exactly one of `reply sent`, `agy failed after sending`,
 
 | `outcome=` | Meaning |
 |---|---|
-| `print_timeout` | `agy` hit `--print-timeout` (`AGY_TIMEOUT_SECONDS`). `stuck=` is the step still running — e.g. `tool:run_command {"CommandLine":"curl …"}`. |
+| `print_timeout` | `agy` hit `--print-timeout` (`AGY_TIMEOUT_SECONDS`, or `AGY_TIMEOUT_SECONDS_COMPLEX` on a Pro run; `limit=` says which). `stuck=` is the step still running — e.g. `tool:run_command {"CommandLine":"curl …"}`. |
 | `background_timeout` | `agy` put a command in the background, ended its turn, waited for it up to the limit, then killed it. `stuck=` shows the command. |
 | `timeout` | Our backstop (timeout + 30s) fired: `agy` itself didn't stop. |
 | `transient` | Upstream 5xx/429 (Gemini `UNAVAILABLE` seen in prod). Retried once if nothing was sent. |

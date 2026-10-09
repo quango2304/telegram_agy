@@ -26,7 +26,9 @@ Every message the bot can see is stored regardless of whether it triggers a repl
 ## How a reply happens
 
 The worker does **not** send anything to Telegram. It takes the per-thread lock,
-builds the prompt, and runs `agy`; `agy` then calls the **`send_chat_message`**
+builds the prompt, reacts 👀, asks Jev which model to use (Flash for plain chat,
+Pro for market outlook / evaluation / multi-step reasoning, see
+[model-routing.md](model-routing.md)), and runs `agy`; `agy` then calls the **`send_chat_message`**
 MCP tool — once, or several times for a "chờ tí… xong rồi, đây" flow (message
 path only; see [scheduled-tasks.md](scheduled-tasks.md)) — and the
 `mcp` service (which holds the bot token) does the actual sending, replies the
@@ -52,8 +54,9 @@ next trigger to pick up.
 ### One retry for upstream blips
 
 If `agy` exits with a transient upstream error (Gemini `UNAVAILABLE` / 5xx /
-429) **and nothing was sent yet**, the worker waits 5s and runs it once more with
-whatever is left of `AGY_TIMEOUT_SECONDS` (skipped under 60s). Nothing is retried
+429) **and nothing was sent yet**, the worker waits 5s and runs it once more, on
+the same model, with whatever is left of that model's budget
+(`AGY_TIMEOUT_SECONDS` or `AGY_TIMEOUT_SECONDS_COMPLEX`; skipped under 60s). Nothing is retried
 after a send, because the rerun would repeat it.
 
 ## Batching rapid triggers

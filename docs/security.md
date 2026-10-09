@@ -52,6 +52,18 @@ keep it identical in all three places and re-test.
 
 **The container is not a security boundary.**
 
+## Data sent to OpenRouter / TypeSafe
+
+With `OPENROUTER_API_KEY` set, every reply first sends the pending message(s)
+and the **6 most recent history lines** of the thread (sender display names +
+text, each clipped to 300 chars, no images) to OpenRouter, which runs TypeSafe's
+Jev model on them to pick the `agy` model ([model-routing.md](model-routing.md)).
+That includes messages from group members who never addressed the bot. Leave the
+key empty to keep chat content off this path.
+
+The call is made by the worker process, not by `agy`. The key lives in the
+worker's env and is not in `SCRUBBED_ENV`, so `agy` cannot read it.
+
 ## Prompt injection
 
 Message text from a group is untrusted input. The `session_key` design is what

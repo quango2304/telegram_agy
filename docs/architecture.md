@@ -12,8 +12,10 @@ hosts.
                                    │ celery task (message row id only)
                                    ▼
                             redis  ◀────────▶  worker (N replicas) + agy
-                            broker + lock            fetches history at run time
-                                   ▲                     │ subprocess (user: agy)
+                            broker + lock            fetches history at run time,
+                                   ▲                 asks Jev (OpenRouter) which
+                                   │                 model: Flash or Pro
+                                   │                     │ subprocess (user: agy)
                                    │                     │ HTTP tool calls
                             beat (1 replica)        mcp (delivery, holds bot token)
                             hourly cleanup          send_chat_message ──▶ Telegram

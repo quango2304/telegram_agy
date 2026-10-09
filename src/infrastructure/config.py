@@ -36,6 +36,16 @@ class Settings:
 
     agy_model: str = "gemini-3.8-flash-high"
     agy_timeout_seconds: int = 300
+    # Model routing: before each run, Jev (ROUTER_MODEL, OpenRouter's Decisions
+    # API — see infrastructure/agy/model_router.py) picks
+    # agy_model (plain chat / Q&A) or agy_model_complex (market outlook,
+    # evaluation, multi-step reasoning). No key = routing off, always agy_model.
+    agy_model_complex: str = "gemini-3.1-pro-high"
+    # Pro is slower and these asks are tool-heavy, so they get their own budget.
+    agy_timeout_seconds_complex: int = 480
+    openrouter_api_key: str = ""
+    router_model: str = "~typesafe/jev-latest"
+    router_timeout_seconds: int = 5
     agy_binary: str = "/usr/local/bin/agy"
     agy_user: str = "agy"
     agy_mcp_url: str = "http://mcp:8000/mcp"
@@ -81,6 +91,12 @@ class Settings:
     log_level: str = "INFO"
     log_format: str = "plain"  # plain | json
 
+    @property
+    def agy_timeout_max(self) -> int:
+        """Longest a single agy run may take, whichever model is routed. The
+        Celery limits and the thread lock TTL are sized from this."""
+        return max(self.agy_timeout_seconds, self.agy_timeout_seconds_complex)
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -103,6 +119,11 @@ def get_settings() -> Settings:
         redis_url=_str("REDIS_URL", "redis://redis:6379/2"),
         agy_model=_str("AGY_MODEL", "gemini-3.8-flash-high"),
         agy_timeout_seconds=_int("AGY_TIMEOUT_SECONDS", 300),
+        agy_model_complex=_str("AGY_MODEL_COMPLEX", "gemini-3.1-pro-high"),
+        agy_timeout_seconds_complex=_int("AGY_TIMEOUT_SECONDS_COMPLEX", 480),
+        openrouter_api_key=_str("OPENROUTER_API_KEY"),
+        router_model=_str("ROUTER_MODEL", "~typesafe/jev-latest"),
+        router_timeout_seconds=_int("ROUTER_TIMEOUT_SECONDS", 5),
         agy_binary=_str("AGY_BINARY", "/usr/local/bin/agy"),
         agy_user=_str("AGY_USER", "agy"),
         agy_mcp_url=_str("AGY_MCP_URL", "http://mcp:8000/mcp"),

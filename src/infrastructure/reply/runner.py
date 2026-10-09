@@ -34,6 +34,7 @@ from src.delivery.telegram.parsers import is_image_media
 from src.domain.entities.message import Message
 from src.domain.interfaces.unit_of_work import IUnitOfWork
 from src.infrastructure.agy.agy_client_impl import AgyClient
+from src.infrastructure.agy.model_router import choose_model
 from src.infrastructure.agy.prompt_builder import (
     HistoryLine,
     PendingTrigger,
@@ -129,9 +130,9 @@ async def _dispatch(task: Any, *, message_kind: str, ref_id: int) -> None:
         lock = redis_client.lock(
             f"lock:thread:{ctx.thread_id}",
             # Outlast a full run incl. the Celery hard time limit
-            # (agy_timeout + 180), so a SIGKILLed task can't leave the lock
+            # (agy_timeout_max + 180), so a SIGKILLed task can't leave the lock
             # expiring mid-run and let a second reply race in.
-            timeout=settings.agy_timeout_seconds + 240,
+            timeout=settings.agy_timeout_max + 240,
             blocking=False,
         )
         if not lock.acquire(blocking=False):
@@ -509,14 +510,32 @@ async def _run_reply(
             len(prompt),
         )
 
-        result = await agy.run(prompt, attachments=attachment_paths, label=label)
+        # After the 👀 went out, so the user sees the bot picked it up while Jev
+        # decides. Never raises; any router trouble means agy_model.
+        # Logs its own `model routed` line (what was asked, the pick, p_complex).
+        choice = await choose_model(
+            settings,
+            history=history,
+            pending=pending,
+            trigger_name=ctx.trigger_name,
+            trigger_text=ctx.trigger_text,
+            label=label,
+        )
+
+        result = await agy.run(
+            prompt,
+            attachments=attachment_paths,
+            timeout_s=choice.timeout_s,
+            model=choice.model,
+            label=label,
+        )
         sent = await _sent_count(uow_factory, session_key)
 
         # One retry for an upstream blip (Gemini 503/429), and only when nothing
         # reached the chat yet — otherwise the rerun would repeat what was sent.
-        # It gets what is left of the budget so the whole task stays under the
-        # Celery soft limit.
-        remaining = settings.agy_timeout_seconds - int(result.elapsed_s)
+        # Same model; it gets what is left of that model's budget so the whole
+        # task stays under the Celery soft limit.
+        remaining = choice.timeout_s - int(result.elapsed_s)
         if result.error == "transient" and sent == 0 and remaining >= _RETRY_MIN_SECONDS:
             logger.warning(
                 "agy transient failure; retrying once %s wait=%ss budget=%ss",
@@ -529,6 +548,7 @@ async def _run_reply(
                 prompt,
                 attachments=attachment_paths,
                 timeout_s=remaining - _RETRY_DELAY_SECONDS,
+                model=choice.model,
                 label=f"{label} retry=1",
             )
             sent = await _sent_count(uow_factory, session_key)

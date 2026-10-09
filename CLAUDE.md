@@ -16,6 +16,7 @@ afterwards, not "if there's time".
 | If you touch… | Update |
 |---|---|
 | trigger rules, batching, the lock, reactions, edits | [docs/replies.md](docs/replies.md) |
+| model routing, Jev, per-model timeouts | [docs/model-routing.md](docs/model-routing.md) |
 | image selection/fetching, media columns | [docs/media.md](docs/media.md) |
 | prompt window, retention, search, chat memory | [docs/memory-and-history.md](docs/memory-and-history.md) |
 | any MCP tool signature or behaviour | [docs/mcp-tools.md](docs/mcp-tools.md) |
