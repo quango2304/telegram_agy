@@ -15,7 +15,8 @@ hosts.
                             broker + lock            fetches history at run time,
                                    ▲                 asks Jev (OpenRouter) which
                                    │                 model: Flash or Pro
-                                   │                     │ subprocess (user: agy)
+                                   │                     │ subprocess (user: agy) ──▶ external MCP servers
+                                   │                     │                            (config/mcp_servers.json)
                                    │                     │ HTTP tool calls
                             beat (1 replica)        mcp (delivery, holds bot token)
                             hourly cleanup          send_chat_message ──▶ Telegram
@@ -55,6 +56,10 @@ All run from one image except `db` / `redis`.
   one at a time and in order, while different threads run fully in parallel.
 - **`bot` must stay at 1** — only one process may long-poll a token.
 - **`beat` must stay at 1** — a second scheduler doubles every scheduled job.
+- **Only `worker` runs `agy`**, so only the worker mounts `config/` and builds
+  `agy`'s MCP config at start: `memory` plus any external servers that pass a
+  health check ([external-mcp-servers.md](external-mcp-servers.md)). The image
+  ships Node and `uv` for local (`npx` / `uvx`) servers.
 
 ## Layering
 

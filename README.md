@@ -22,6 +22,7 @@ One `make dev` brings up the whole stack.
 | [scheduled-tasks.md](docs/scheduled-tasks.md) | Reminders, one-off and cron |
 | [mcp-tools.md](docs/mcp-tools.md) | Every tool `agy` can call, and the session-key model |
 | [composio-and-files.md](docs/composio-and-files.md) | Sending files, optional Composio integration |
+| [external-mcp-servers.md](docs/external-mcp-servers.md) | Adding your own local / remote MCP servers via `config/mcp_servers.json` |
 | [configuration.md](docs/configuration.md) | Every environment variable |
 | [security.md](docs/security.md) | What contains `agy`, what doesn't, and the accepted risks |
 | [operations.md](docs/operations.md) | Commands, migrations, troubleshooting, log lines |

@@ -39,6 +39,18 @@ RUN curl -fsSL https://composio.dev/install | \
     COMPOSIO_INSTALL_SHELL=none COMPOSIO_QUIET=1 sh \
  && composio --help > /dev/null
 
+# --- Runtimes for local MCP servers (config/mcp_servers.json) ---
+# agy launches `npx …` / `uvx …` servers itself; SCRUBBED_ENV's PATH is only
+# /usr/local/bin:/usr/bin:/bin, so they must land there. Node is copied from
+# the official image (same Debian release) rather than apt's nodejs+npm, which
+# drags in hundreds of node-* packages.
+COPY --from=node:22-trixie-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22-trixie-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=ghcr.io/astral-sh/uv:0.8.19 /uv /uvx /usr/local/bin/
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+ && node --version && npx --version && uvx --version
+
 # Unprivileged user that runs agy. Its HOME holds the bind-mounted OAuth token
 # and the MCP registration; the entrypoint chowns it (native Linux keeps host uid).
 RUN useradd -m -u 1001 -s /bin/bash agy \

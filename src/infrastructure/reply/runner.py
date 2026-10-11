@@ -34,6 +34,7 @@ from src.delivery.telegram.parsers import is_image_media
 from src.domain.entities.message import Message
 from src.domain.interfaces.unit_of_work import IUnitOfWork
 from src.infrastructure.agy.agy_client_impl import AgyClient
+from src.infrastructure.agy.mcp_servers import read_prompts
 from src.infrastructure.agy.model_router import choose_model
 from src.infrastructure.agy.prompt_builder import (
     HistoryLine,
@@ -490,6 +491,7 @@ async def _run_reply(
             truncate_chars=settings.agy_message_truncate_chars,
             context_limit=settings.context_message_limit,
             extra_tools=bool(settings.composio_api_key),
+            mcp_prompts=read_prompts(),
             scheduled=scheduled,
             pending=pending,
             attachments=attachments,

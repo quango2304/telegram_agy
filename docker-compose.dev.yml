@@ -61,6 +61,9 @@ services:
     command: >
       uv run celery -A src.infrastructure.celery_app:celery_app worker
       -Q replies,maintenance -c 4 -l INFO
+    environment:
+      # Extra MCP servers (config/ arrives via the `.:/app` mount below).
+      AGY_MCP_SERVERS_FILE: /app/config/mcp_servers.json
     volumes:
       - .:/app
       - /app/.venv

@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "example-remote": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      },
+      "prompt": "khi cần tra X thì gọi tool `search_x` của server này, một lần thôi.",
+      "disabled": true
+    },
+    "example-npx": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything"],
+      "disabled": true
+    },
+    "example-uvx": {
+      "command": "uvx",
+      "args": ["mcp-server-time", "--local-timezone=Asia/Ho_Chi_Minh"],
+      "env": {},
+      "disabled": true
+    }
+  }
+}

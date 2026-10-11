@@ -30,6 +30,15 @@ RUN curl -fsSL https://composio.dev/install | \
     COMPOSIO_INSTALL_SHELL=none COMPOSIO_QUIET=1 sh \
  && composio --help > /dev/null
 
+# --- Runtimes for local MCP servers (config/mcp_servers.json) ---
+# agy launches `npx …` / `uvx …` servers itself; SCRUBBED_ENV's PATH is only
+# /usr/local/bin:/usr/bin:/bin. uv/uvx are already in /bin above.
+COPY --from=node:22-trixie-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22-trixie-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+ && node --version && npx --version && uvx --version
+
 # Unprivileged user that actually runs agy. Its HOME holds the OAuth token
 # (bind-mounted by compose) and the MCP registration.
 RUN useradd -m -u 1001 -s /bin/bash agy \

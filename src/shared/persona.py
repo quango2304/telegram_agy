@@ -8,8 +8,11 @@ text is edited, re-test before shipping.
 
 ``tool_usage_guide()`` renders the tool block that used to be built inline in
 ``prompt_builder`` — always-on web-search + file-send rules, plus the Composio
-CLI paragraph only when Composio is configured.
+CLI paragraph only when Composio is configured, and one paragraph per extra MCP
+server that carries a ``prompt`` in ``config/mcp_servers.json``.
 """
+
+from collections.abc import Mapping
 
 PERSONA_PROMPT = """Bạn là Gen Đần — một con bot trong nhóm chat Telegram.
 Luôn trả lời bằng tiếng Việt (trừ khi người ta nhắn bằng tiếng khác thì trả lời bằng tiếng đó).
@@ -38,7 +41,9 @@ BOT_LABEL = "Gen Đần"
 MEMORY_SOFT_LIMIT_CHARS = 3000
 
 
-def tool_usage_guide(*, composio: bool, history_limit: int) -> str:
+def tool_usage_guide(
+    *, composio: bool, history_limit: int, mcp_prompts: Mapping[str, str] | None = None
+) -> str:
     """Tool rules injected into the run prompt.
 
     ``composio`` mirrors ``build_prompt(extra_tools=...)`` — pass it ``False`` when
@@ -47,6 +52,10 @@ def tool_usage_guide(*, composio: bool, history_limit: int) -> str:
 
     ``history_limit`` is ``CONTEXT_MESSAGE_LIMIT``: the model is told the real
     number so it understands why memory matters at all.
+
+    ``mcp_prompts`` is server name -> the ``prompt`` text from
+    ``config/mcp_servers.json``, only for servers that passed the startup check
+    (see ``infrastructure/agy/mcp_servers.py``).
     """
     parts = [
         f"GHI NHỚ LÂU DÀI: mỗi lượt bạn CHỈ thấy khoảng {history_limit} tin gần "
@@ -82,6 +91,8 @@ def tool_usage_guide(*, composio: bool, history_limit: int) -> str:
             "để chạy (kết quả download thường là một s3url — dùng "
             "`curl -sL '<url>' -o /outbox/<tên-file>` để lấy về)."
         )
+    for name, text in (mcp_prompts or {}).items():
+        parts.append(f"CÔNG CỤ MCP `{name}`: {text}")
     return "\n".join(parts)
 
 

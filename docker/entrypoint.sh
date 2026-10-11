@@ -25,14 +25,21 @@ chown -R agy:agy /home/agy 2>/dev/null || true
 # a native-Linux host (incl. the prod VPS, where the prod Dockerfile already
 # baked this in); best-effort on Docker Desktop bind mounts, which don't honour
 # POSIX perms — there the .env itself is shadowed by compose instead.
-chmod -R go-rwx /app/src /app/migrations 2>/dev/null || true
+chmod -R go-rwx /app/src /app/migrations /app/config 2>/dev/null || true
 chmod go-rwx /app/.env /app/alembic.ini /app/pyproject.toml 2>/dev/null || true
 
 # Shared outbox volume (mounted in worker + mcp): agy drops files here, the mcp
 # service reads them back to send. agy runs as uid 1001, so it must own it.
 mkdir -p /outbox && chown agy:agy /outbox 2>/dev/null || true
 
-if [ -n "${AGY_MCP_URL:-}" ]; then
+if [ -n "${AGY_MCP_SERVERS_FILE:-}" ]; then
+  # Worker only (compose sets AGY_MCP_SERVERS_FILE there). Validates
+  # config/mcp_servers.json, health-checks each server, and rewrites
+  # /home/agy/.gemini/config/mcp_config.json from scratch: "memory" plus the
+  # servers that answered. A malformed file exits 1 here and stops the worker
+  # ON PURPOSE (set -e). See docs/external-mcp-servers.md.
+  /app/.venv/bin/python -m src.entrypoints.agy_mcp_setup
+elif [ -n "${AGY_MCP_URL:-}" ]; then
   # Writes /home/agy/.gemini/config/mcp_config.json (VERIFIED path).
   # Server name MUST be "memory" — permission rules and docs are name-coupled.
   agy_clean agy mcp add --type http memory "${AGY_MCP_URL}" >/dev/null 2>&1 || true

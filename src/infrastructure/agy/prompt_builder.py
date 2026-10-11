@@ -15,7 +15,7 @@ name of who it replied to. See ``HistoryLine``.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from src.shared.persona import BOT_LABEL, PERSONA_PROMPT, SECRET_GUARD, tool_usage_guide
@@ -139,6 +139,7 @@ def build_prompt(
     truncate_chars: int,
     context_limit: int,
     extra_tools: bool = False,
+    mcp_prompts: Mapping[str, str] | None = None,
     scheduled: bool = False,
     pending: Sequence[PendingTrigger] | None = None,
     attachments: Sequence[PromptAttachment] | None = None,
@@ -147,7 +148,9 @@ def build_prompt(
     pending = list(pending or [])
     attach_block = _fmt_attachments(attachments or [], bot_username, truncate_chars)
     attach_section = f"{attach_block}\n\n" if attach_block else ""
-    tools_block = tool_usage_guide(composio=extra_tools, history_limit=context_limit)
+    tools_block = tool_usage_guide(
+        composio=extra_tools, history_limit=context_limit, mcp_prompts=mcp_prompts
+    )
     rendered = [_fmt_line(h, bot_username, truncate_chars) for h in history]
     trigger_body = _strip_handle(trigger_text, bot_username)
     if len(trigger_body) > truncate_chars:

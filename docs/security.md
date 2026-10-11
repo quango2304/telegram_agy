@@ -40,6 +40,17 @@ Containment has to happen at the OS layer instead.
 `/home/agy/.gemini/` and `~/.composio/user_data.json`. Hiding those would need a
 separate runner container (rejected as too heavy for this project).
 
+The same goes for **external MCP server keys** ([external-mcp-servers.md](external-mcp-servers.md)).
+`agy` has to read `/home/agy/.gemini/config/mcp_config.json` to send the
+`headers`, and a local server's `env` sits in its process environment. Anyone
+who can message the bot can ask it to print either. This risk was accepted
+on 2026-10-11, with the same reasoning as for Composio: only put keys there that
+you'd tolerate leaking to chat members. The source file `config/mcp_servers.json`
+lives under the root-only `/app` tree in prod. That adds nothing for the keys,
+since the generated copy is readable anyway, but it keeps the `prompt` texts
+(`/var/lib/telegram_agy/mcp_prompts.json`, root-only) out of `agy`'s reach so it
+cannot rewrite its own instructions.
+
 Instead they are protected **in words**: `SECRET_GUARD` (`src/shared/persona.py`)
 forbids reading, printing or sending any credential, env var or secret file, and it
 is repeated **three times** — top of prompt, bottom of prompt, and as an

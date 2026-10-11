@@ -15,3 +15,6 @@ celerybeat-schedule*
 
 # per-developer Claude notes (deploy host etc.)
 CLAUDE.local.md
+
+# extra MCP servers for agy — holds API keys; the .example is committed
+config/mcp_servers.json

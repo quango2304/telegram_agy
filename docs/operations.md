@@ -65,6 +65,9 @@ code.
 | `DetachedInstanceError` | An ORM attribute was read after its UoW block closed. Copy primitives out inside the block — see [architecture.md](architecture.md). |
 | Bot ignores messages in a group | It only answers on @-mention or a reply to itself. Not a bug — see [replies.md](replies.md). |
 | DB errors on first boot | Run `make migrate` once. |
+| `worker` restarts in a loop right after start; log says `mcp_servers.json invalid` | A mistake in `config/mcp_servers.json`. The worker refuses to start on purpose. Every problem is logged on its own line. Fix the file, then `restart worker`. See [external-mcp-servers.md](external-mcp-servers.md). |
+| Suddenly **every** reply ends `outcome=print_timeout` with `stuck=… call_mcp_tool … "ServerName": "<x>"` | External MCP server `<x>` started hanging after the worker started. The startup check can't catch that. Set `"disabled": true` on it (or fix it) and restart the worker. |
+| An external MCP server's tools are never used | Look for `mcp server SKIPPED name=<x> … reason=…` from worker start. The server failed its health check and wasn't registered. |
 
 ## Log lines worth grepping
 
@@ -87,6 +90,11 @@ code.
 | `agy called no send tool` / `agy failed; thread left silent` | run finished but the thread stayed silent |
 | `trigger already covered` | a sibling task correctly no-op'd after batching |
 | `cleanup done … messages_deleted=N` | hourly retention sweep |
+| `mcp server ok name=… kind=remote\|local target=… tools=N took=Xs` | worker start: an external MCP server passed its check and is registered. `target=` is the host (never the full URL) or the command. |
+| `mcp server SKIPPED name=… reason=…` | worker start: a server failed its check (`no answer within Ns`, `ConnectError`, a 401…). Local servers also include the tail of their stderr. |
+| `mcp server disabled name=…` | the entry has `"disabled": true` |
+| `mcp servers registered: memory, … prompts=…` | worker start: what `agy` will see, and which servers' `prompt` text goes into replies |
+| `mcp_servers.json invalid path=…: <problem>` | worker start: config error, one line per problem; the worker exits 1 |
 
 ## Why didn't the bot answer?
 

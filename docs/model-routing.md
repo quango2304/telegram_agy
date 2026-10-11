@@ -5,7 +5,16 @@ Every `agy` run picks one of two models first:
 | | Model (default) | Budget | For |
 |---|---|---|---|
 | simple | `AGY_MODEL` = `gemini-3.8-flash-high` | `AGY_TIMEOUT_SECONDS` = 300s | casual chat, quick Q&A, lookups, translation, reminders |
-| complex | `AGY_MODEL_COMPLEX` = `gemini-3.1-pro-high` | `AGY_TIMEOUT_SECONDS_COMPLEX` = 480s | market outlook, evaluation / valuation, comparisons, multi-step reasoning |
+| complex | `AGY_MODEL_COMPLEX` = `gemini-3.1-pro-high` | `AGY_TIMEOUT_SECONDS_COMPLEX` = 480s | market outlook, evaluation / valuation, comparisons, multi-step reasoning, finding / downloading / sending a book or file |
+
+Book and file asks are deliberately **complex** (added 2026-10-11). They are
+multi-tool jobs: Composio Drive search, then download, then `send_chat_file`, or
+the slow `search_ebooks` tool ([external-mcp-servers.md](external-mcp-servers.md)).
+Before this, Jev read "có sách Sapiens không" as a quick lookup (`p_complex=0.00`).
+Flash then called the ebook tool four times, wandered off probing `/proc`, and
+timed out. Sonnet answered the same kind of ask with one call in 75s. After the
+criteria change, a 10-message check went 10/10: five book/file asks complex
+(`p_complex` 0.83–1.0), and time, gold price, a joke and a reminder simple.
 
 Code: `src/infrastructure/agy/model_router.py`, called from `_run_reply` in
 `src/infrastructure/reply/runner.py`.

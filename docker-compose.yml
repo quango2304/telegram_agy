@@ -65,8 +65,15 @@ services:
     command: >
       celery -A src.infrastructure.celery_app:celery_app worker
       -Q replies,maintenance -c 4 -l INFO
+    environment:
+      # Extra MCP servers; the entrypoint checks them and registers the ones
+      # that answer. Worker only — see docs/external-mcp-servers.md.
+      AGY_MCP_SERVERS_FILE: /app/config/mcp_servers.json
     volumes:
       - agy_outbox:/outbox
+      # Gitignored mcp_servers.json (+ the committed example). A directory, not
+      # the file: Docker turns a missing single-file mount into an empty dir.
+      - ./config:/app/config:ro
       # Token file ALONE is enough; agy bootstraps the rest. MUST be :rw — agy
       # rewrites it on refresh. The entrypoint chowns it to the agy user.
       - ${HOME}/.gemini/antigravity-cli/antigravity-oauth-token:/home/agy/.gemini/antigravity-cli/antigravity-oauth-token:rw

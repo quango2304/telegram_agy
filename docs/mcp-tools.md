@@ -39,3 +39,9 @@ This bit us once for real: a `logger.info(..., extra={"name": ...})` used `name`
 a reserved `LogRecord` field, so the *success* log threw after the file was sent
 and `agy` sent it up to four times. Post-effect code is wrapped in
 `contextlib.suppress(Exception)` for this reason. Keep it that way.
+
+## Other servers
+
+These are the tools of our own `memory` server. Extra servers (local `npx` / `uvx`
+commands or remote URLs) can be added without code: see
+[external-mcp-servers.md](external-mcp-servers.md).

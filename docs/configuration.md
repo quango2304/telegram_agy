@@ -67,6 +67,11 @@ See [media.md](media.md).
 | Key | Notes |
 |---|---|
 | `COMPOSIO_API_KEY` | A `uak_…` **user** key. See [composio-and-files.md](composio-and-files.md). |
+| `AGY_MCP_SERVERS_FILE` | **Set by the compose files on the worker only** (`/app/config/mcp_servers.json`). Don't put it in `.env`: every service reads `.env`, and the setup step would then run in bot, beat and mcp too. Empty means no external MCP servers. See [external-mcp-servers.md](external-mcp-servers.md). |
+
+External MCP servers themselves are configured in `config/mcp_servers.json`, not
+in `.env`. A `docker compose ... restart worker` is enough to pick up edits to
+that file.
 
 ## Logging
 

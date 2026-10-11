@@ -61,8 +61,9 @@ _SIMPLE_CRITERIA = (
 _COMPLEX_CRITERIA = (
     "Market outlook or prediction (stocks, VN-Index, gold, FX, crypto), evaluating "
     "or valuing something, comparing options, financial statement analysis, "
-    "investment questions, planning, debugging, or anything needing careful "
-    "multi-step reasoning."
+    "investment questions, planning, debugging, finding / downloading / sending a "
+    "book, ebook or file (Google Drive, ebook search), or anything needing careful "
+    "multi-step reasoning or several tool calls."
 )
 
 

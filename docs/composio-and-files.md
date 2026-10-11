@@ -38,5 +38,7 @@ must be a `uak_` user key.
   Composio tool with no approval. **Anyone who can message the bot can act on those
   accounts** — only enable on a private / trusted deployment. See
   [security.md](security.md).
+- To add a regular MCP server instead (a few tools, always in the prompt), use
+  [external-mcp-servers.md](external-mcp-servers.md).
 - A `composio` run that wedges is killed by process-group SIGKILL plus a Celery
   hard time limit; the reply fails, the worker slot frees, nothing hangs.
