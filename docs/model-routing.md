@@ -72,10 +72,24 @@ Both models get the same persona (`src/shared/persona.py`). The original one-lin
 as a polite assistant: users found it humourless (that is why prod went back from
 `claude-sonnet-5-5-medium` to Gemini on 2026-10-07), and it closed analyses with
 boilerplate ("số liệu chỉ tham khảo, quyết định là của sếp"). The persona now
-spells it out: a cheeky friend, not an assistant; at least one joke per reply even
-in serious analysis; banned assistant phrases and closing disclaimers; and the
+spells it out: a cheeky friend, not an assistant; a joke in most replies even in
+serious analysis; banned assistant phrases and closing disclaimers; and the
 limits (no looks / family / region / gender jokes, ease off when someone is
 genuinely upset). Re-test **both** models after editing it.
+
+It used to say "at least one joke per reply" and "đá xéo chuyện cũ trong nhóm".
+Together with a single salty fact in chat memory (a member's losing stock), that made
+the bot tack the same jab onto *every* reply — including answers to someone else
+about petrol — and each repetition sitting in the history window reinforced the
+next. The persona now says: joke at the person asking and the topic asked; bring
+up someone's backstory only when they are in the conversation or the topic
+matches; skip any jab already used in the recent `[Gen Đần]` history lines; and
+a reply with nothing worth joking about may just answer. A one-line reminder of
+the targeting/no-repeat rule also sits right after the closing instruction,
+because the persona is thousands of characters above the history it refers to.
+
+**Known limit:** history is per forum topic, so a jab used in one topic is
+invisible from another topic of the same group and may be reused there.
 
 ## When Jev fails
 

@@ -75,6 +75,11 @@ The prompt also tells the model, using the real `CONTEXT_MESSAGE_LIMIT` value,
 that it only ever sees the last N messages — that is *why* writing to memory in
 the same turn matters, rather than "later".
 
+The prompt also says memory is for *understanding* people, not a joke bank: a
+fact in it should not be dragged into replies on unrelated topics. Without that,
+one salty line (someone's losing stock) became the punchline of every reply in
+the chat — see [model-routing.md](model-routing.md#persona-across-models).
+
 ### Keeping it small
 
 The prompt sets a **soft budget of 3000 characters**

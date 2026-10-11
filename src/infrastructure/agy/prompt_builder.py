@@ -236,6 +236,8 @@ def build_prompt(
             f"Ghi nhớ hiện tại về nhóm này:\n{mem}\n\n"
             f"Lịch sử chat gần đây (cũ → mới):\n{history_block}\n\n"
             f"{closing}\n\n"
+            "Cà khịa thì nhắm vào người đang hỏi và chuyện đang hỏi; miếng khịa nào "
+            "[Gen Đần] đã dùng ở trên rồi thì đừng lặp lại.\n\n"
             f"[Nhắc lại] {SECRET_GUARD}"
         )
 
