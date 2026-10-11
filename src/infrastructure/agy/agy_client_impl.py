@@ -75,6 +75,11 @@ _BACKGROUND_KILLED_RE = re.compile(r"terminating \d+ background task")
 # Upstream blips worth one retry. Seen in prod: "Eligibility check failed:
 # UNAVAILABLE (code 503)". Only matched against the stderr of a non-zero exit.
 _TRANSIENT_RE = re.compile(r"UNAVAILABLE|RESOURCE_EXHAUSTED|\(code (?:429|500|502|503|504)\)")
+# A 429 that is really the account's quota for that model, not a blip. Seen in
+# prod (Claude, 2026-10-11): "RESOURCE_EXHAUSTED (code 429): Individual quota
+# reached … Resets in 46h38m5s." Retrying the same model is pointless; checked
+# before _TRANSIENT_RE, which would also match it.
+_QUOTA_RE = re.compile(r"\bquota\b", re.IGNORECASE)
 # One stream-json line can carry a whole tool output (a file read, a web page).
 _LINE_LIMIT = 32 * 1024 * 1024
 _PARAM_LOG_CHARS = 200
@@ -94,9 +99,10 @@ class AgyResult:
     raw: dict[str, Any] = field(default_factory=dict)
     # "" when ok, else one of: no_agy_user, timeout (our backstop fired),
     # print_timeout (agy's own limit, mid-turn), background_timeout (a
-    # backgrounded command was killed at the limit), transient (upstream
-    # 5xx/429 — safe to retry if nothing was sent), nonzero, no_result,
-    # unsuccessful.
+    # backgrounded command was killed at the limit), quota (that model's
+    # account quota is spent — try another model, not the same one), transient
+    # (upstream 5xx/429 — safe to retry if nothing was sent), nonzero,
+    # no_result, unsuccessful.
     error: str = ""
     elapsed_s: float = 0.0
 
@@ -347,6 +353,8 @@ class AgyClient:
             error = "timeout"
         elif _PRINT_TIMEOUT_MARKER in err_text or (not response and elapsed >= limit_s):
             error = "print_timeout"
+        elif returncode != 0 and _QUOTA_RE.search(err_text):
+            error = "quota"
         elif returncode != 0:
             error = "transient" if _TRANSIENT_RE.search(err_text) else "nonzero"
         elif _BACKGROUND_KILLED_RE.search(err_text):

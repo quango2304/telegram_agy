@@ -59,6 +59,22 @@ the same model, with whatever is left of that model's budget
 (`AGY_TIMEOUT_SECONDS` or `AGY_TIMEOUT_SECONDS_COMPLEX`; skipped under 60s). Nothing is retried
 after a send, because the rerun would repeat it.
 
+### Quota fallback to the default model
+
+A 429 whose stderr mentions a **quota** (`Individual quota reached … Resets in
+46h…`) is classified `quota`, not `transient`: the account's allowance for that
+model is spent for days, so retrying it 5s later only burns another 6s and still
+leaves the thread silent. On 2026-10-11 the Claude quota ran out while Gemini
+still worked; every message Jev routed to `AGY_MODEL_COMPLEX` (all ebook asks)
+went unanswered until this existed.
+
+So when the routed model is not `AGY_MODEL`, nothing was sent yet and at least
+60s of budget remain, the worker reruns at once on `AGY_MODEL`, with
+`AGY_TIMEOUT_SECONDS` capped by what is left. A quota error on `AGY_MODEL` itself
+has nowhere to fall back to and leaves the thread silent. Each message still
+tries the complex model first (≈6s lost per run while the quota is out); nothing
+remembers the exhaustion between runs.
+
 ## Batching rapid triggers
 
 Several people can @-mention the bot while one reply is already running. Rather

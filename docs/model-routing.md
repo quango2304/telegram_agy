@@ -60,6 +60,10 @@ Two things that look right and are not:
 4. `agy --model <pick> --print-timeout <that model's budget>`.
 5. A transient-error retry (see [replies.md](replies.md#one-retry-for-upstream-blips))
    reuses the same model and what is left of *its* budget.
+6. A **quota** error on the complex model (its account allowance is spent, e.g.
+   Claude's "Individual quota reached") reruns once on `AGY_MODEL` instead — see
+   [replies.md](replies.md#quota-fallback-to-the-default-model). Worst case stays
+   a complex question answered by Flash, never silence.
 
 ## Persona across models
 

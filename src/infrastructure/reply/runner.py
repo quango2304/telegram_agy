@@ -58,8 +58,9 @@ UowFactory = Callable[[], IUnitOfWork]
 # Newest N unanswered triggers a single locked run will answer in one agy pass.
 _MAX_PENDING_PER_RUN = 10
 
-# The one retry after a transient upstream error (see _run_reply): wait this
-# long first, and skip it when less than _RETRY_MIN_SECONDS of budget is left.
+# The one retry after a transient upstream error, or the one fallback after a
+# quota error (see _run_reply): wait _RETRY_DELAY_SECONDS before a retry, and
+# skip either when less than _RETRY_MIN_SECONDS of budget is left.
 _RETRY_DELAY_SECONDS = 5
 _RETRY_MIN_SECONDS = 60
 
@@ -538,7 +539,32 @@ async def _run_reply(
         # Same model; it gets what is left of that model's budget so the whole
         # task stays under the Celery soft limit.
         remaining = choice.timeout_s - int(result.elapsed_s)
-        if result.error == "transient" and sent == 0 and remaining >= _RETRY_MIN_SECONDS:
+        if (
+            result.error == "quota"
+            and sent == 0
+            and choice.model != settings.agy_model
+            and remaining >= _RETRY_MIN_SECONDS
+        ):
+            # The routed (complex) model's quota is spent — for days, not
+            # seconds. Answering on the default model beats a silent thread;
+            # it gets its own budget, capped by what is left of the task's.
+            # A quota error on the default model itself has nowhere to go.
+            logger.warning(
+                "agy quota exhausted; falling back %s from=%s to=%s budget=%ss",
+                label,
+                choice.model,
+                settings.agy_model,
+                remaining,
+            )
+            result = await agy.run(
+                prompt,
+                attachments=attachment_paths,
+                timeout_s=min(settings.agy_timeout_seconds, remaining),
+                model=settings.agy_model,
+                label=f"{label} fallback=1",
+            )
+            sent = await _sent_count(uow_factory, session_key)
+        elif result.error == "transient" and sent == 0 and remaining >= _RETRY_MIN_SECONDS:
             logger.warning(
                 "agy transient failure; retrying once %s wait=%ss budget=%ss",
                 label,

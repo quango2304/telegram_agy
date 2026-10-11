@@ -84,8 +84,9 @@ code.
 | `[httpx] HTTP Request: POST https://openrouter.ai/api/alpha/decisions …` | httpx's own INFO line for the Jev call, harmless |
 | `agy start thread_id=… model=… timeout=Ns` | the `agy` subprocess is launching |
 | `agy step thread_id=… #i DONE tool:<name> {params} took=Xs at=+Ys` | one step finished (model turns log as `agent_response … tokens=N`) |
-| `agy run finished thread_id=… outcome=ok\|print_timeout\|background_timeout\|timeout\|transient\|nonzero\|no_result\|unsuccessful …` | one line per `agy` run: wall time, tools used, tokens, `conversation_id`; on failure also `stuck=` and `stderr=` |
+| `agy run finished thread_id=… outcome=ok\|print_timeout\|background_timeout\|timeout\|quota\|transient\|nonzero\|no_result\|unsuccessful …` | one line per `agy` run: wall time, tools used, tokens, `conversation_id`; on failure also `stuck=` and `stderr=` |
 | `agy transient failure; retrying once` | upstream 5xx/429 with nothing sent; one retry follows |
+| `agy quota exhausted; falling back thread_id=… from=<complex> to=<default> budget=Ns` | the routed model's quota is spent; the run is redone once on `AGY_MODEL` (its lines carry `fallback=1`). Seeing this on every complex run means the quota is out — `stderr=` on the line before says when it resets. |
 | `agy failed after sending; thread left hanging` | something (usually "chờ tí") went out, then the run failed |
 | `agy called no send tool` / `agy failed; thread left silent` | run finished but the thread stayed silent |
 | `trigger already covered` | a sibling task correctly no-op'd after batching |
@@ -107,6 +108,7 @@ Every run ends in exactly one of `reply sent`, `agy failed after sending`,
 | `print_timeout` | `agy` hit `--print-timeout` (`AGY_TIMEOUT_SECONDS`, or `AGY_TIMEOUT_SECONDS_COMPLEX` on a Pro run; `limit=` says which). `stuck=` is the step still running — e.g. `tool:run_command {"CommandLine":"curl …"}`. |
 | `background_timeout` | `agy` put a command in the background, ended its turn, waited for it up to the limit, then killed it. `stuck=` shows the command. |
 | `timeout` | Our backstop (timeout + 30s) fired: `agy` itself didn't stop. |
+| `quota` | The model's account quota is spent (`Individual quota reached … Resets in …`). On the complex model the run falls back once to `AGY_MODEL`; on `AGY_MODEL` itself the thread stays silent until the reset. |
 | `transient` | Upstream 5xx/429 (Gemini `UNAVAILABLE` seen in prod). Retried once if nothing was sent. |
 | `nonzero` | `agy` crashed; see `stderr=`. |
 | `no_result` / `unsuccessful` | No `result` event, or `status != SUCCESS` / `denied_actions`. |
