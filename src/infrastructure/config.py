@@ -40,8 +40,8 @@ class Settings:
     # API — see infrastructure/agy/model_router.py) picks
     # agy_model (plain chat / Q&A) or agy_model_complex (market outlook,
     # evaluation, multi-step reasoning). No key = routing off, always agy_model.
-    agy_model_complex: str = "gemini-3.1-pro-high"
-    # Pro is slower and these asks are tool-heavy, so they get their own budget.
+    agy_model_complex: str = "gemini-4-argon-medium"
+    # Argon is slower and these asks are tool-heavy, so they get their own budget.
     agy_timeout_seconds_complex: int = 480
     openrouter_api_key: str = ""
     router_model: str = "~typesafe/jev-latest"
@@ -122,7 +122,7 @@ def get_settings() -> Settings:
         redis_url=_str("REDIS_URL", "redis://redis:6379/2"),
         agy_model=_str("AGY_MODEL", "gemini-3.8-flash-high"),
         agy_timeout_seconds=_int("AGY_TIMEOUT_SECONDS", 300),
-        agy_model_complex=_str("AGY_MODEL_COMPLEX", "gemini-3.1-pro-high"),
+        agy_model_complex=_str("AGY_MODEL_COMPLEX", "gemini-4-argon-medium"),
         agy_timeout_seconds_complex=_int("AGY_TIMEOUT_SECONDS_COMPLEX", 480),
         openrouter_api_key=_str("OPENROUTER_API_KEY"),
         router_model=_str("ROUTER_MODEL", "~typesafe/jev-latest"),

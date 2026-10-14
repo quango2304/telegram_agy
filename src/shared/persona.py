@@ -1,7 +1,7 @@
 """The Gen Đần persona — kept in ONE constant so it can be tuned without hunting.
 
 This style is tuned for both ``gemini-3.8-flash-high`` (simple) and
-``claude-sonnet-5-5-high`` (complex, via model routing): Vietnamese, sarcastic,
+``gemini-4-argon-medium`` (complex, via model routing): Vietnamese, sarcastic,
 chat-length, no markdown. The jokes aim at the current asker and topic, and a
 jab already in the bot's recent history lines is not reused — without that, one
 salty fact from memory (e.g. someone's losing stock) got tacked onto every

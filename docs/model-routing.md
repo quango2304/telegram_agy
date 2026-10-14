@@ -5,7 +5,12 @@ Every `agy` run picks one of two models first:
 | | Model (default) | Budget | For |
 |---|---|---|---|
 | simple | `AGY_MODEL` = `gemini-3.8-flash-high` | `AGY_TIMEOUT_SECONDS` = 300s | casual chat, quick Q&A, lookups, translation, reminders |
-| complex | `AGY_MODEL_COMPLEX` = `gemini-3.1-pro-high` | `AGY_TIMEOUT_SECONDS_COMPLEX` = 480s | market outlook, evaluation / valuation, comparisons, multi-step reasoning, finding / downloading / sending a book or file |
+| complex | `AGY_MODEL_COMPLEX` = `gemini-4-argon-medium` | `AGY_TIMEOUT_SECONDS_COMPLEX` = 480s | market outlook, evaluation / valuation, comparisons, multi-step reasoning, finding / downloading / sending a book or file |
+
+The complex model was `claude-sonnet-5-5-high` until 2026-10-14, when `agy`
+added Gemini 4 Argon (`agy models`: `gemini-4-argon-low|medium|high`). `-medium`
+was chosen over `-high` for speed and quota; Gemini 3.1 Pro, the old code
+default, is no longer offered.
 
 Book and file asks are deliberately **complex** (added 2026-10-11). They are
 multi-tool jobs: Composio Drive search, then download, then `send_chat_file`, or
@@ -31,7 +36,7 @@ a one-line description), and Jev's `choice` is the model to run.
   scheduled run) plus the **6 most recent history lines**, each clipped to 300
   chars. Images are shown as `[ảnh]` and are not sent. The history is there so
   follow-ups route correctly: "thế còn HPG?" after a VN-Index question goes to
-  Pro, "thêm cái nữa" after a joke stays on Flash.
+  Argon, "thêm cái nữa" after a joke stays on Flash.
 - One pick per run. A batch of several pending triggers goes in together and
   shares one model.
 - Measured: **~0.65s**, **~$0.00002** per call (input tokens only), 9/9 on a
@@ -63,7 +68,10 @@ Two things that look right and are not:
 6. A **quota** error on the complex model (its account allowance is spent, e.g.
    Claude's "Individual quota reached") reruns once on `AGY_MODEL` instead — see
    [replies.md](replies.md#quota-fallback-to-the-default-model). Worst case stays
-   a complex question answered by Flash, never silence.
+   a complex question answered by Flash, never silence. Two caveats with Argon:
+   the quota check matches the word "quota" in `agy`'s stderr, which was only
+   ever seen in Claude's message; and if Argon and Flash share one Gemini
+   allowance, running out stops both and the fallback has nowhere to go.
 
 ## Persona across models
 
@@ -107,7 +115,7 @@ Turn routing off by leaving `OPENROUTER_API_KEY` empty (or setting
 Every run logs one line with everything needed to grade the pick afterwards:
 
 ```
-model routed thread_id=1 model=gemini-3.1-pro-high by=jev p_complex=0.99 confidence=0.98
+model routed thread_id=1 model=gemini-4-argon-medium by=jev p_complex=0.99 confidence=0.98
   timeout=480s router_ms=1302 jev=typesafe/jev-1.13-20260917
   jev_id=gen-dec-1791530404-TK8BtVLvaEIOYbJcwr7L context_lines=2 asks=["[Quân]: thế còn HPG?"]
 ```
@@ -119,7 +127,7 @@ model routed thread_id=1 model=gemini-3.1-pro-high by=jev p_complex=0.99 confide
 - `jev_id` finds the call in the OpenRouter activity log. `jev=` tells you
   whether a new Jev release changed things.
 - The `agy run finished` line for the same `thread_id` right after says how it
-  went on that model (elapsed, tools, outcome). Pro picks that finish in a few
+  went on that model (elapsed, tools, outcome). Argon picks that finish in a few
   seconds with no tools, or Flash picks that time out, are misroutes.
 
 On the VPS (journald, kept across deploys):
@@ -134,8 +142,8 @@ journalctl -t telegram_agy-worker-1 --since "7 days ago" --no-pager | grep "mode
 
 ## Timeouts
 
-Pro is slower and complex asks are tool-heavy (web searches, several steps), so
+Argon is slower and complex asks are tool-heavy (web searches, several steps), so
 it gets its own budget. The Celery soft/hard limits and the per-thread Redis lock
 TTL are sized from the **larger** of the two budgets (`Settings.agy_timeout_max`),
-otherwise a long Pro run would be SIGKILLed by Celery, or its lock would expire
+otherwise a long Argon run would be SIGKILLed by Celery, or its lock would expire
 mid-run and let a second reply race in.

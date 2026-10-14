@@ -105,7 +105,7 @@ Every run ends in exactly one of `reply sent`, `agy failed after sending`,
 
 | `outcome=` | Meaning |
 |---|---|
-| `print_timeout` | `agy` hit `--print-timeout` (`AGY_TIMEOUT_SECONDS`, or `AGY_TIMEOUT_SECONDS_COMPLEX` on a Pro run; `limit=` says which). `stuck=` is the step still running — e.g. `tool:run_command {"CommandLine":"curl …"}`. |
+| `print_timeout` | `agy` hit `--print-timeout` (`AGY_TIMEOUT_SECONDS`, or `AGY_TIMEOUT_SECONDS_COMPLEX` on an Argon run; `limit=` says which). `stuck=` is the step still running — e.g. `tool:run_command {"CommandLine":"curl …"}`. |
 | `background_timeout` | `agy` put a command in the background, ended its turn, waited for it up to the limit, then killed it. `stuck=` shows the command. |
 | `timeout` | Our backstop (timeout + 30s) fired: `agy` itself didn't stop. |
 | `quota` | The model's account quota is spent (`Individual quota reached … Resets in …`). On the complex model the run falls back once to `AGY_MODEL`; on `AGY_MODEL` itself the thread stays silent until the reset. |

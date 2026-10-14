@@ -23,9 +23,9 @@ Everything else has a working default for local Docker.
 
 | Key | Default | Notes |
 |---|---|---|
-| `AGY_MODEL` | `gemini-3.8-flash-high` | The **simple** model: what every run uses unless the router picks `AGY_MODEL_COMPLEX` (see [model-routing.md](model-routing.md)). `agy models` lists options (Claude Sonnet/Opus 5.5, Gemini 3.x Flash, Gemini 3.1 Pro; effort suffix `-low`/`-medium`/`-high`). Avoid `-low` if Composio is enabled. Run it as the `agy` user inside the container — as root it says "Please sign in". |
+| `AGY_MODEL` | `gemini-3.8-flash-high` | The **simple** model: what every run uses unless the router picks `AGY_MODEL_COMPLEX` (see [model-routing.md](model-routing.md)). `agy models` lists options (Gemini 4 Argon, Gemini 3.8 Flash, Claude Sonnet/Opus 5.5; effort suffix `-low`/`-medium`/`-high`). Avoid `-low` if Composio is enabled. Run it as the `agy` user inside the container — as root it says "Please sign in". |
 | `AGY_TIMEOUT_SECONDS` | 300 | Budget for an `AGY_MODEL` run. |
-| `AGY_MODEL_COMPLEX` | `gemini-3.1-pro-high` | The **complex** model: market outlook, evaluation, multi-step reasoning. |
+| `AGY_MODEL_COMPLEX` | `gemini-4-argon-medium` | The **complex** model: market outlook, evaluation, multi-step reasoning. |
 | `AGY_TIMEOUT_SECONDS_COMPLEX` | 480 | Budget for an `AGY_MODEL_COMPLEX` run. Celery soft/hard limits (+120 / +180) and the thread lock TTL (+240) are derived from the larger of the two budgets. |
 | `OPENROUTER_API_KEY` | *(empty)* | Turns model routing on. Empty means every run uses `AGY_MODEL`. |
 | `ROUTER_MODEL` | `~typesafe/jev-latest` | Jev model on OpenRouter's Decisions API. Pin e.g. `typesafe/jev-1.13` if a release changes routing. |

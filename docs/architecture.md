@@ -14,7 +14,7 @@ hosts.
                             redis  ◀────────▶  worker (N replicas) + agy
                             broker + lock            fetches history at run time,
                                    ▲                 asks Jev (OpenRouter) which
-                                   │                 model: Flash or Pro
+                                   │                 model: Flash or Argon
                                    │                     │ subprocess (user: agy) ──▶ external MCP servers
                                    │                     │                            (config/mcp_servers.json)
                                    │                     │ HTTP tool calls

@@ -27,7 +27,7 @@ Every message the bot can see is stored regardless of whether it triggers a repl
 
 The worker does **not** send anything to Telegram. It takes the per-thread lock,
 builds the prompt, reacts 👀, asks Jev which model to use (Flash for plain chat,
-Pro for market outlook / evaluation / multi-step reasoning, see
+Argon for market outlook / evaluation / multi-step reasoning, see
 [model-routing.md](model-routing.md)), and runs `agy`; `agy` then calls the **`send_chat_message`**
 MCP tool — once, or several times for a "chờ tí… xong rồi, đây" flow (message
 path only; see [scheduled-tasks.md](scheduled-tasks.md)) — and the
