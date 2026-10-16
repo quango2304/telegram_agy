@@ -23,7 +23,7 @@ import shutil
 import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -289,23 +289,24 @@ async def _pick_media(
     history: Sequence[Message],
     pending: Sequence[PendingTrigger] | None,
     limit: int,
-    window_seconds: int,
+    context_messages: int,
 ) -> list[MediaPick]:
     """Which images this run should actually fetch, in priority order:
 
     1. an image on a trigger message itself ("@bot cái này là gì" + photo),
-    2. an image on the message a trigger replies to — the dominant flow: someone
-       posts a photo, chatter follows, then someone replies to *that* photo,
-    3. otherwise an image posted *right around* the trigger — within
-       ``window_seconds``. That is what picks up an album (Telegram sends it as
-       one captioned message plus N bare image messages, all at the same instant)
-       and the "posts a photo, then immediately asks" flow.
+    2. an image on the message a trigger replies to — someone replies to *that*
+       photo, however old it is,
+    3. otherwise any image among the last ``context_messages`` messages before
+       the newest trigger, newest first, plus anything that landed after it. That
+       covers "photo, a comment, then @bot about it" minutes later in a slow
+       chat, and an album (one captioned message plus N bare image messages, all
+       at the same instant — some sorted after the trigger).
 
-    Tier 3 is time-boxed on purpose: without it, every reply in a photo-heavy
-    group would re-download the last N images even when the question is "2 + 2".
-    Tier 3 also skips **stickers**: people spam them as punctuation, so a proximity
-    rule would burn the whole budget on decoration. A sticker is only fetched when
-    it *is* the trigger, or the trigger replies to it.
+    Tier 3 counts messages, not seconds: prod missed a photo two messages and
+    three minutes before an @-mention under the old 60s window. It skips
+    **stickers**: people spam them as punctuation, so a proximity rule would burn
+    the whole budget on decoration. A sticker is only fetched when it *is* the
+    trigger, or the trigger replies to it.
 
     Bounded by ``limit`` because every image costs real input tokens.
     """
@@ -348,15 +349,14 @@ async def _pick_media(
                 # Older than the prompt window but still in retention.
                 target = await uow.messages.get_by_tg_id(thread_id, trigger.reply_to_tg_message_id)
             take(target)
-    # Tier 3, only near the trigger in time. No trigger at all (a scheduled run)
-    # means no question to illustrate, so nothing is attached.
-    trigger_times = [by_tg[t].sent_at for t in trigger_ids if t in by_tg]
-    if trigger_times:
-        newest = max(trigger_times)
-        window = timedelta(seconds=window_seconds)
-        for msg in reversed(history):
-            if abs(newest - msg.sent_at) <= window:
-                take(msg, allow_sticker=False)
+    # Tier 3. No trigger at all (a scheduled run) means no question to
+    # illustrate, so nothing is attached.
+    trigger_set = set(trigger_ids)
+    positions = [i for i, m in enumerate(history) if m.tg_message_id in trigger_set]
+    if positions and context_messages > 0:
+        start = max(0, max(positions) - context_messages)
+        for msg in reversed(history[start:]):
+            take(msg, allow_sticker=False)
     return picked
 
 
@@ -452,7 +452,7 @@ async def _run_reply(
                 rows,
                 pending,
                 settings.media_max_per_run,
-                settings.media_context_seconds,
+                settings.media_context_messages,
             )
             session_key = await uow.sessions.mint(
                 ctx.thread_id,

@@ -11,8 +11,9 @@ Priority order, capped at `MEDIA_MAX_PER_RUN` (default **5**):
 1. a photo on the **trigger message itself** ("@bot cái này là gì" + photo),
 2. a photo on the message the trigger **replies to** — the common flow: someone
    posts a photo, chatter follows, then someone replies to *that* photo,
-3. otherwise a photo posted **right around the trigger** — within
-   `MEDIA_CONTEXT_SECONDS` (default 60s) of it.
+3. otherwise any photo among the last `MEDIA_CONTEXT_MESSAGES` (default **10**)
+   messages before the trigger — plus anything that landed after it — newest
+   first. Stickers are skipped here.
 
 Step 2 is why `messages.reply_to_tg_message_id` is stored. Without it, "what is
 this?" replied onto an older photo would attach whatever image happened to be most
@@ -21,15 +22,30 @@ recent — and the bot would confidently describe the wrong picture.
 Each attachment is labelled in the prompt with who sent it and its caption, so
 several images in one run stay distinguishable.
 
-**Why tier 3 is time-boxed.** Telegram sends an album as one captioned message
-plus N bare image messages, all at the same instant — the mention lands on only
-one of them, so the rest can only be found by proximity. But an untimed "newest
-photos in the window" rule fires on *every* reply: in a photo-heavy group, asking
-"2 + 2" would download the last `MEDIA_MAX_PER_RUN` images. The time window keeps
-albums and "photo, then immediately asks" while costing nothing on unrelated
-messages.
+**Why tier 3 counts messages, not seconds.** It used to be a 60-second window
+around the trigger. A slow group does "photo → *đỉnh đỉnh* → three minutes
+later, @bot cái gì tái sinh z" — an @-mention, not a reply. On prod
+(2026-10-15, topic 405) that got `media=0` twice in a row: the bot answered from
+the bare `[ảnh]` history line, said it couldn't see anything, and the follow-up
+"ủa chưa đọc dc hình ảnh hả" missed the photo for the same reason. Counting
+messages fits how a conversation actually moves. It still covers albums:
+Telegram sends one as a captioned message plus N bare image messages at the same
+instant, the mention lands on one of them, and the rest sit right beside it —
+some sorted *after* the trigger, which is why those are included too.
+
+The trade-off is cost: in a photo-heavy group, any reply within 10 messages of a
+photo downloads it (up to `MEDIA_MAX_PER_RUN`), even for "2 + 2". Lower
+`MEDIA_CONTEXT_MESSAGES` if that bites.
+
+**Why stickers are skipped in tier 3.** People spam them as punctuation, so a
+proximity rule would burn the whole budget on decoration. A sticker is only
+fetched when it *is* the trigger, or the trigger replies to it.
 
 A scheduled run has no trigger message, so tier 3 never applies to it.
+
+In a forum topic every non-reply message carries `reply_to_tg_message_id` = the
+topic's root id (405 for the gold/VN-Index topic). Tier 2 looks that up, finds
+no stored row, and moves on — it is not a real reply.
 
 ## What is and isn't fetched
 

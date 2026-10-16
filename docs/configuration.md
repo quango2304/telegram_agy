@@ -50,7 +50,7 @@ See [memory-and-history.md](memory-and-history.md).
 |---|---|---|
 | `MEDIA_MAX_PER_RUN` | 5 | Max images attached per reply. `0` disables image reading. Each image costs tokens and latency. |
 | `MEDIA_MAX_DOWNLOAD_MB` | 20 | Telegram's `getFile` ceiling anyway. |
-| `MEDIA_CONTEXT_SECONDS` | 60 | How close to the trigger an otherwise-unlinked photo must be to get attached. Raising this makes unrelated replies download old photos. |
+| `MEDIA_CONTEXT_MESSAGES` | 10 | An otherwise-unlinked photo is attached when it is among this many messages before the trigger. Stickers skipped. `0` disables. Raising it makes more replies download photos. See [media.md](media.md). |
 
 See [media.md](media.md).
 

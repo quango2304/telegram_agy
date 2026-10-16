@@ -76,12 +76,11 @@ class Settings:
     # one costs real input tokens. Bot API getFile caps downloads at 20 MB.
     media_max_per_run: int = 5
     media_max_download_mb: int = 20
-    # Tier-3 fallback window. A photo with no explicit link to the question is
-    # only attached when it was posted within this many seconds of the trigger —
-    # which catches an album (one caption, N image messages, all same instant)
-    # and "photo, then immediately asks", without re-downloading old photos on
-    # every unrelated message.
-    media_context_seconds: int = 60
+    # Tier-3 fallback: a photo with no explicit link to the question (not on the
+    # trigger, not the message it replies to) is attached when it is among this
+    # many messages before the trigger. Catches albums and "photo, a comment,
+    # then @bot about it". 0 disables.
+    media_context_messages: int = 10
 
     # Emoji reacted onto a trigger message while the run is in flight ("seen").
     # Empty disables. Must be a reaction Telegram allows for bots.
@@ -144,7 +143,7 @@ def get_settings() -> Settings:
         history_search_limit=_int("HISTORY_SEARCH_LIMIT", 20),
         media_max_per_run=_int("MEDIA_MAX_PER_RUN", 5),
         media_max_download_mb=_int("MEDIA_MAX_DOWNLOAD_MB", 20),
-        media_context_seconds=_int("MEDIA_CONTEXT_SECONDS", 60),
+        media_context_messages=_int("MEDIA_CONTEXT_MESSAGES", 10),
         reaction_ack=_str("REACTION_ACK", "👀"),
         log_level=_str("LOG_LEVEL", "INFO"),
         log_format=_str("LOG_FORMAT", "plain"),
