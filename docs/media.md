@@ -11,9 +11,9 @@ Priority order, capped at `MEDIA_MAX_PER_RUN` (default **5**):
 1. a photo on the **trigger message itself** ("@bot cái này là gì" + photo),
 2. a photo on the message the trigger **replies to** — the common flow: someone
    posts a photo, chatter follows, then someone replies to *that* photo,
-3. otherwise any photo among the last `MEDIA_CONTEXT_MESSAGES` (default **10**)
-   messages before the trigger — plus anything that landed after it — newest
-   first. Stickers are skipped here.
+3. otherwise any photo or sticker among the last `MEDIA_CONTEXT_MESSAGES`
+   (default **10**) messages before the trigger — plus anything that landed
+   after it — newest first.
 
 Step 2 is why `messages.reply_to_tg_message_id` is stored. Without it, "what is
 this?" replied onto an older photo would attach whatever image happened to be most
@@ -34,12 +34,14 @@ instant, the mention lands on one of them, and the rest sit right beside it —
 some sorted *after* the trigger, which is why those are included too.
 
 The trade-off is cost: in a photo-heavy group, any reply within 10 messages of a
-photo downloads it (up to `MEDIA_MAX_PER_RUN`), even for "2 + 2". Lower
+photo or sticker downloads it (up to `MEDIA_MAX_PER_RUN`), even for "2 + 2". Lower
 `MEDIA_CONTEXT_MESSAGES` if that bites.
 
-**Why stickers are skipped in tier 3.** People spam them as punctuation, so a
-proximity rule would burn the whole budget on decoration. A sticker is only
-fetched when it *is* the trigger, or the trigger replies to it.
+**Stickers count like photos in tier 3** (since 2026-10-16). They used to be
+skipped there as "punctuation", but then "@bot sticker này nghĩa là gì" a couple
+of messages after the sticker got nothing. In a sticker-heavy chat they can now
+take part of the `MEDIA_MAX_PER_RUN` budget; newest first, so the closest ones
+win.
 
 A scheduled run has no trigger message, so tier 3 never applies to it.
 

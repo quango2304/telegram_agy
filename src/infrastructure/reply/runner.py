@@ -296,17 +296,16 @@ async def _pick_media(
     1. an image on a trigger message itself ("@bot cái này là gì" + photo),
     2. an image on the message a trigger replies to — someone replies to *that*
        photo, however old it is,
-    3. otherwise any image among the last ``context_messages`` messages before
-       the newest trigger, newest first, plus anything that landed after it. That
+    3. otherwise any image or sticker among the last ``context_messages``
+       messages before the newest trigger, newest first, plus anything that
+       landed after it. That
        covers "photo, a comment, then @bot about it" minutes later in a slow
        chat, and an album (one captioned message plus N bare image messages, all
        at the same instant — some sorted after the trigger).
 
     Tier 3 counts messages, not seconds: prod missed a photo two messages and
-    three minutes before an @-mention under the old 60s window. It skips
-    **stickers**: people spam them as punctuation, so a proximity rule would burn
-    the whole budget on decoration. A sticker is only fetched when it *is* the
-    trigger, or the trigger replies to it.
+    three minutes before an @-mention under the old 60s window. Stickers count
+    like photos.
 
     Bounded by ``limit`` because every image costs real input tokens.
     """
@@ -318,13 +317,12 @@ async def _pick_media(
     picked: list[MediaPick] = []
     seen: set[int] = set()
 
-    def take(msg: Message | None, *, allow_sticker: bool = True) -> None:
+    def take(msg: Message | None) -> None:
         if (
             msg is not None
             and msg.id not in seen
             and msg.media_file_id
             and is_image_media(msg.media_kind, msg.media_mime)
-            and (allow_sticker or msg.media_kind != "sticker")
             and len(picked) < limit
         ):
             seen.add(msg.id)
@@ -356,7 +354,7 @@ async def _pick_media(
     if positions and context_messages > 0:
         start = max(0, max(positions) - context_messages)
         for msg in reversed(history[start:]):
-            take(msg, allow_sticker=False)
+            take(msg)
     return picked
 
 
