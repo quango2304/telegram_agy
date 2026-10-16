@@ -9,10 +9,50 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 from typing import Any
 
 _CONFIGURED = False
+
+# A Bot API URL carries the token in its path (``/bot<id>:<secret>/getUpdates``,
+# ``/file/bot<id>%3A<secret>/photos/...``). httpx logs every request URL at
+# INFO, and on prod that put the token into journald ~170k times before
+# 2026-10-16. ``_configure`` silences those request lines; this filter is the
+# backstop for anything else that quotes the URL, an exception message included.
+_BOT_TOKEN = re.compile(r"bot(\d+)(?::|%3A)[A-Za-z0-9_-]{20,}")
+
+
+def _redact(text: str) -> str:
+    return _BOT_TOKEN.sub(r"bot\1:<redacted>", text)
+
+
+class RedactTokenFilter(logging.Filter):
+    """Strips bot tokens from a record before any formatter sees it. Attached
+    to handlers, not loggers, so records propagated from library loggers are
+    covered too."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        redacted = _redact(message)
+        if redacted != message:
+            record.msg, record.args = redacted, None
+        if record.exc_info and not record.exc_text:
+            record.exc_text = _redact(logging.Formatter().formatException(record.exc_info))
+        return True
+
+
+def protect_handlers(logger: logging.Logger) -> None:
+    """Silence httpx's per-request INFO lines and redact tokens on every handler
+    of ``logger``. Celery replaces the root handlers in the worker and beat, so
+    ``celery_app`` calls this again from its ``after_setup_logger`` signal."""
+    # httpx2 is the MCP SDK's fork of httpx, with the same request logging.
+    for noisy in ("httpx", "httpx2"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+    for handler in logger.handlers:
+        if not any(isinstance(f, RedactTokenFilter) for f in handler.filters):
+            handler.addFilter(RedactTokenFilter())
+
 
 _RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()) | {
     "message",
@@ -69,6 +109,7 @@ def _configure(force: bool = False) -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(settings.log_level.upper())
+    protect_handlers(root)
     _CONFIGURED = True
 
 

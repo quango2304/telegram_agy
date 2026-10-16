@@ -75,6 +75,24 @@ key empty to keep chat content off this path.
 The call is made by the worker process, not by `agy`. The key lives in the
 worker's env and is not in `SCRUBBED_ENV`, so `agy` cannot read it.
 
+## The bot token and the logs
+
+Every Bot API URL carries the token in its path (`/bot<id>:<secret>/getUpdates`,
+`/file/bot<id>%3A<secret>/photos/…`), and httpx logs each request URL at INFO.
+Until 2026-10-16 that wrote the prod token into journald on every poll, reaction
+and file download — ~170k lines in a month. Two layers now keep it out:
+
+- `src/shared/logger.py` holds the `httpx` and `httpx2` loggers at WARNING, so
+  the per-request lines never happen.
+- A `RedactTokenFilter` on every handler rewrites `bot<id>:<secret>` (and the
+  `%3A` form) to `bot<id>:<redacted>`, in the message and in exception
+  tracebacks — an `httpx` error can quote the URL too.
+
+Celery throws away the root logger's handlers in `worker` and `beat` and installs
+its own, so `celery_app.py` re-applies both from its `after_setup_logger` /
+`after_setup_task_logger` signals. A new process type that configures logging
+on its own needs `protect_handlers` called the same way.
+
 ## Prompt injection
 
 Message text from a group is untrusted input. The `session_key` design is what

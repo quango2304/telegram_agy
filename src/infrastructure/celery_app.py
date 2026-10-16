@@ -6,10 +6,14 @@ schedule are added in steps 6 and 8.
 
 from __future__ import annotations
 
-from celery import Celery
+import logging
+from typing import Any
+
+from celery import Celery, signals
 from celery.schedules import crontab
 
 from src.infrastructure.config import get_settings
+from src.shared.logger import protect_handlers
 
 _settings = get_settings()
 
@@ -50,3 +54,11 @@ celery_app.conf.update(
         },
     },
 )
+
+
+@signals.after_setup_logger.connect
+@signals.after_setup_task_logger.connect
+def _protect_celery_logging(logger: logging.Logger, **_: Any) -> None:
+    """Celery hijacks the root logger with its own handlers, dropping ours —
+    re-apply the token redaction and httpx silencing to whatever it installed."""
+    protect_handlers(logger)

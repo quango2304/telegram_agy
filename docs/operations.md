@@ -81,7 +81,6 @@ code.
 | `reply start thread_id=… pending=N trigger_tg_ids=[…] … prompt_chars=N` | a locked run is about to call `agy` |
 | `model routed thread_id=… model=… by=jev\|off\|timeout\|http_<status>\|http_error\|bad_answer p_complex=… confidence=… timeout=Ns router_ms=… jev=… jev_id=gen-dec-… context_lines=N asks=[…]` | which model this run uses and why, one per run. `by=jev` is Jev's pick; anything else fell back to `AGY_MODEL`. `asks=` is the message text Jev judged. See [model-routing.md](model-routing.md#judging-the-picks). |
 | `model router http error … status=… body=…` / `model router request failed` / `model router bad answer` | the Jev call failed; the run continues on `AGY_MODEL`. `status=401`: bad `OPENROUTER_API_KEY`. `402`: OpenRouter credits ran out. |
-| `[httpx] HTTP Request: POST https://openrouter.ai/api/alpha/decisions …` | httpx's own INFO line for the Jev call, harmless |
 | `agy start thread_id=… model=… timeout=Ns` | the `agy` subprocess is launching |
 | `agy step thread_id=… #i DONE tool:<name> {params} took=Xs at=+Ys` | one step finished (model turns log as `agent_response … tokens=N`) |
 | `agy run finished thread_id=… outcome=ok\|print_timeout\|background_timeout\|timeout\|quota\|transient\|nonzero\|no_result\|unsuccessful …` | one line per `agy` run: wall time, tools used, tokens, `conversation_id`; on failure also `stuck=` and `stderr=` |
@@ -96,6 +95,11 @@ code.
 | `mcp server disabled name=…` | the entry has `"disabled": true` |
 | `mcp servers registered: memory, … prompts=…` | worker start: what `agy` will see, and which servers' `prompt` text goes into replies |
 | `mcp_servers.json invalid path=…: <problem>` | worker start: config error, one line per problem; the worker exits 1 |
+
+httpx's own `HTTP Request: …` lines are gone since 2026-10-16 — `httpx` and
+`httpx2` are held at WARNING because Bot API URLs carry the token
+([security.md](security.md#the-bot-token-and-the-logs)). To watch HTTP traffic
+while debugging, lower them locally; never on prod.
 
 ## Why didn't the bot answer?
 

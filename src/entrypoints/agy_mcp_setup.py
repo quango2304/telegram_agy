@@ -8,7 +8,6 @@ fails its health check is only skipped. See docs/external-mcp-servers.md.
 
 from __future__ import annotations
 
-import logging
 import sys
 
 import anyio
@@ -29,8 +28,6 @@ logger = get_logger(__name__)
 
 def main() -> int:
     settings = get_settings()
-    # One INFO line per health-check request is noise next to our own summary.
-    logging.getLogger("httpx2").setLevel(logging.WARNING)
     path = settings.agy_mcp_servers_file
     try:
         specs = load_servers(path)
