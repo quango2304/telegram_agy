@@ -34,6 +34,18 @@ must be a `uak_` user key.
 - Typical flow: *"find X in my Drive and send it"* → `composio search` →
   `composio execute GOOGLEDRIVE_DOWNLOAD_FILE` → `curl` the returned URL into
   `/outbox` → `send_chat_file`.
+- The other way round: *"up file này lên drive"* replied onto (or a few messages
+  after) a file in the chat → the worker has already downloaded it into the
+  workdir as `./file_<id>.<ext>` → `composio execute GOOGLEDRIVE_UPLOAD_FILE`
+  with the original name. Files over 20 MB can't be fetched from Telegram at
+  all. See [media.md](media.md#files-epub-pdf-zip).
+- `GOOGLEDRIVE_UPLOAD_FILE` (checked against its `--get-schema`, 2026-10-20)
+  takes a local **path**, names the Drive file after that path's basename, and
+  caps at **5 MB** — most books are bigger. So the prompt tells `agy` to `cp` the
+  workdir copy to its original name first, and the Composio paragraph in
+  `persona.py` points it at `GOOGLEDRIVE_RESUMABLE_UPLOAD` (name and folder in
+  `metadata`) above 5 MB. Without those two hints it uploaded `file_<id>.epub`
+  or failed on size and went searching.
 - `agy` runs `--dangerously-skip-permissions`, so it will invoke any connected
   Composio tool with no approval. **Anyone who can message the bot can act on those
   accounts** — only enable on a private / trusted deployment. See

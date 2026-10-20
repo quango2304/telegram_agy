@@ -74,7 +74,7 @@ code.
 | Line | Meaning |
 |---|---|
 | `reply enqueued` | `bot` saw a trigger and queued it |
-| `media attached … picked=N downloaded=M` | images selected / fetched for this run |
+| `media attached … picked=N downloaded=M files=F` | images and files selected / fetched for this run; `F` = non-image documents among them (fetched or not). A file over 20 MB is picked but not downloaded |
 | `chat message sent … ids=[…]` | `mcp` actually sent to Telegram |
 | `chat message edited` | an `edit_chat_message` landed |
 | `reply sent … pending=N sent=M` | run finished; N triggers answered with M actions |

@@ -28,10 +28,10 @@ def resolve_media(message: Message) -> MediaRef | None:
     """The one attachment worth remembering, or ``None``.
 
     ``message.photo`` is a tuple of sizes, smallest → largest; the last entry is
-    the full-resolution one. Only kinds a model can actually open are worth a
-    downloadable ``file_id``: video and audio are recorded by kind so the history
-    line stays honest, but are never downloaded (see ``is_image_media``).
-    Stickers are the exception — see ``resolve_sticker_media``."""
+    the full-resolution one. Images and documents are fetched at reply time (see
+    ``is_fetchable_media``); video and audio are recorded by kind so the history
+    line stays honest, but are never downloaded. Stickers are the exception —
+    see ``resolve_sticker_media``."""
     if message.photo:
         return MediaRef(kind="photo", file_id=message.photo[-1].file_id, mime="image/jpeg")
     if message.document is not None:
@@ -78,7 +78,7 @@ def resolve_sticker_media(sticker: Sticker) -> MediaRef:
 
 
 def is_image_media(kind: str | None, mime: str | None) -> bool:
-    """Only these are handed to ``agy``. A Telegram photo is always a JPEG; a
+    """Shown to ``agy`` as a picture. A Telegram photo is always a JPEG; a
     document counts when it declares an ``image/*`` mime; a sticker counts when
     ``resolve_sticker_media`` found a still frame for it. Audio is excluded
     deliberately — verified that ``agy`` cannot transcribe ogg/opus or mp3."""
@@ -87,6 +87,13 @@ def is_image_media(kind: str | None, mime: str | None) -> bool:
     if kind in ("document", "sticker"):
         return bool(mime) and str(mime).startswith("image/")
     return False
+
+
+def is_fetchable_media(kind: str | None, mime: str | None) -> bool:
+    """Downloaded into the run's workdir: every image, plus any document (epub,
+    pdf, zip…) — so "@bot up file này lên drive" has an actual file to upload.
+    A non-image document is handed over as a file, not as a picture to look at."""
+    return is_image_media(kind, mime) or kind == "document"
 
 
 def resolve_text(message: Message) -> str:

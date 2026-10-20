@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import mimetypes
 import re
 import shutil
 import tempfile
@@ -30,7 +31,7 @@ from typing import Any
 import redis
 from redis.exceptions import LockError
 
-from src.delivery.telegram.parsers import is_image_media
+from src.delivery.telegram.parsers import is_fetchable_media, is_image_media
 from src.domain.entities.message import Message
 from src.domain.interfaces.unit_of_work import IUnitOfWork
 from src.infrastructure.agy.agy_client_impl import AgyClient
@@ -91,6 +92,10 @@ class MediaPick:
     caption: str
     file_name: str
     kind: str = "photo"
+    is_image: bool = True
+    # What the sender called it (documents only) — the workdir copy gets a
+    # generated name, so this is what an upload to Drive should use.
+    original_name: str | None = None
 
 
 def run_generate_reply(task: Any, message_id: int) -> None:
@@ -251,17 +256,38 @@ async def _resolve_context(
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
-def _attachment_name(msg: Message) -> str:
-    """A predictable, shell-safe basename agy can reference in the workdir. The
-    extension is a guess from the stored mime and is corrected after download by
-    ``_sniff_ext`` — a sticker thumbnail may be webp or jpg whatever we assumed."""
-    ext = ".jpg"
+# Mimes Python's table may not know; anything else unknown becomes ``.bin``.
+_DOC_EXT_BY_MIME = {
+    "application/epub+zip": ".epub",
+    "application/x-mobipocket-ebook": ".mobi",
+    "application/vnd.amazon.ebook": ".azw",
+}
+
+
+def _attachment_name(msg: Message, *, is_image: bool) -> str:
+    """A predictable, shell-safe basename agy can reference in the workdir.
+
+    Never the sender's own filename: agy loads ``AGENTS.md``/``GEMINI.md`` from
+    its cwd as hard workspace rules, so a group member sending a file called
+    that would be writing the bot's rules. Only the extension is kept.
+
+    For an image the extension is a guess from the stored mime and is corrected
+    after download by ``_sniff_ext`` — a sticker thumbnail may be webp or jpg
+    whatever we assumed."""
+    ext = ""
     if msg.media_file_name and "." in msg.media_file_name:
         ext = "." + _SAFE_NAME.sub("", msg.media_file_name.rsplit(".", 1)[1])[:8].lower()
-    elif msg.media_mime and "/" in msg.media_mime:
-        ext = "." + _SAFE_NAME.sub("", msg.media_mime.split("/", 1)[1])[:8].lower()
+    if ext in ("", "."):
+        ext = ""
+        mime = (msg.media_mime or "").lower()
+        if is_image and "/" in mime:
+            ext = "." + _SAFE_NAME.sub("", mime.split("/", 1)[1])[:8].lower()
+        elif mime:
+            ext = _DOC_EXT_BY_MIME.get(mime) or mimetypes.guess_extension(mime) or ""
+    if not is_image:
+        return f"file_{msg.tg_message_id}{ext if len(ext) > 1 else '.bin'}"
     prefix = "sticker" if msg.media_kind == "sticker" else "anh"
-    return f"{prefix}_{msg.tg_message_id}{ext or '.jpg'}"
+    return f"{prefix}_{msg.tg_message_id}{ext if len(ext) > 1 else '.jpg'}"
 
 
 def _sniff_ext(path: Path) -> str | None:
@@ -291,7 +317,7 @@ async def _pick_media(
     limit: int,
     context_messages: int,
 ) -> list[MediaPick]:
-    """Which images this run should actually fetch, in priority order:
+    """Which images and files this run should actually fetch, in priority order:
 
     1. an image on a trigger message itself ("@bot cái này là gì" + photo),
     2. an image on the message a trigger replies to — someone replies to *that*
@@ -307,7 +333,11 @@ async def _pick_media(
     three minutes before an @-mention under the old 60s window. Stickers count
     like photos.
 
-    Bounded by ``limit`` because every image costs real input tokens.
+    A non-image document (epub, pdf…) goes through the same tiers: it is fetched
+    so agy can upload or forward it, not to be looked at.
+
+    Bounded by ``limit`` because every image costs real input tokens, and every
+    file a download of up to 20 MB.
     """
     if limit <= 0:
         return []
@@ -322,18 +352,21 @@ async def _pick_media(
             msg is not None
             and msg.id not in seen
             and msg.media_file_id
-            and is_image_media(msg.media_kind, msg.media_mime)
+            and is_fetchable_media(msg.media_kind, msg.media_mime)
             and len(picked) < limit
         ):
             seen.add(msg.id)
+            is_image = is_image_media(msg.media_kind, msg.media_mime)
             picked.append(
                 MediaPick(
                     file_id=msg.media_file_id,
                     tg_message_id=msg.tg_message_id,
                     from_name=msg.from_name or "ai đó",
                     caption=msg.text,
-                    file_name=_attachment_name(msg),
+                    file_name=_attachment_name(msg, is_image=is_image),
                     kind=msg.media_kind or "photo",
+                    is_image=is_image,
+                    original_name=None if is_image else msg.media_file_name,
                 )
             )
 
@@ -360,17 +393,38 @@ async def _pick_media(
 
 async def _download_media(
     settings: Settings, sender: TelegramSender, picks: Sequence[MediaPick], dest_dir: Path
-) -> list[tuple[Path, PromptAttachment]]:
-    """Fetch each pick. A failed download is skipped, never fatal — the run still
-    answers, just without that image."""
-    out: list[tuple[Path, PromptAttachment]] = []
+) -> list[tuple[Path | None, PromptAttachment]]:
+    """Fetch each pick. A failed download is never fatal — the run still
+    answers, just without that file.
+
+    A failed *image* is dropped silently. A failed *document* is still returned
+    (``path`` is ``None``) so the prompt can say it could not be fetched: with
+    only ``[file: …]`` in the history, agy once spent 436s hunting Drive and the
+    web for a book that was simply never handed over."""
+    out: list[tuple[Path | None, PromptAttachment]] = []
     max_bytes = settings.media_max_download_mb * 1024 * 1024
     for pick in picks:
         path = dest_dir / pick.file_name
         if not await sender.download_media(pick.file_id, path, max_bytes):
+            if not pick.is_image:
+                out.append(
+                    (
+                        None,
+                        PromptAttachment(
+                            file_name=pick.file_name,
+                            sender=pick.from_name,
+                            tg_message_id=pick.tg_message_id,
+                            caption=pick.caption,
+                            kind=pick.kind,
+                            is_image=False,
+                            original_name=pick.original_name,
+                            missing=True,
+                        ),
+                    )
+                )
             continue
         name = pick.file_name
-        real_ext = _sniff_ext(path)
+        real_ext = _sniff_ext(path) if pick.is_image else None
         if real_ext and not name.endswith(real_ext):
             renamed = path.with_suffix(real_ext)
             path.rename(renamed)
@@ -384,6 +438,8 @@ async def _download_media(
                     tg_message_id=pick.tg_message_id,
                     caption=pick.caption,
                     kind=pick.kind,
+                    is_image=pick.is_image,
+                    original_name=pick.original_name,
                 ),
             )
         )
@@ -469,13 +525,14 @@ async def _run_reply(
         if media_rows:
             media_dir = Path(tempfile.mkdtemp(prefix="media-"))
             downloaded = await _download_media(settings, sender, media_rows, media_dir)
-            attachment_paths = [p for p, _ in downloaded]
+            attachment_paths = [p for p, _ in downloaded if p is not None]
             attachments = [a for _, a in downloaded]
             logger.info(
-                "media attached thread_id=%s picked=%s downloaded=%s",
+                "media attached thread_id=%s picked=%s downloaded=%s files=%s",
                 ctx.thread_id,
                 len(media_rows),
-                len(attachments),
+                len(attachment_paths),
+                sum(1 for a in attachments if not a.is_image),
             )
 
         prompt = build_prompt(
@@ -507,7 +564,7 @@ async def _run_reply(
             [p.tg_message_id for p in pending] if pending else [ctx.trigger_tg_id],
             len(history),
             len(memory_text or ""),
-            len(attachments),
+            len(attachment_paths),
             len(prompt),
         )
 

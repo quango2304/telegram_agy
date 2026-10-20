@@ -1,10 +1,12 @@
-# Seeing images
+# Images and files
 
 When someone asks about a picture — or sends a sticker — the worker fetches it and
 hands it to `agy`, which opens the file and answers from what is actually in the
-image.
+image. Files sent in the chat (epub, pdf, zip…) are fetched the same way, so
+"@bot up file này lên drive" has a real file to upload — see
+[Files](#files-epub-pdf-zip).
 
-## Which image gets attached
+## Which image or file gets attached
 
 Priority order, capped at `MEDIA_MAX_PER_RUN` (default **5**):
 
@@ -22,6 +24,10 @@ recent — and the bot would confidently describe the wrong picture.
 Each attachment is labelled in the prompt with who sent it and its caption, so
 several images in one run stay distinguishable.
 
+Files go through the same three tiers and share the same `MEDIA_MAX_PER_RUN`
+budget, so a file posted within the last 10 messages is attached even when the
+mention isn't a reply to it.
+
 **Why tier 3 counts messages, not seconds.** It used to be a 60-second window
 around the trigger. A slow group does "photo → *đỉnh đỉnh* → three minutes
 later, @bot cái gì tái sinh z" — an @-mention, not a reply. On prod
@@ -34,7 +40,10 @@ instant, the mention lands on one of them, and the rest sit right beside it —
 some sorted *after* the trigger, which is why those are included too.
 
 The trade-off is cost: in a photo-heavy group, any reply within 10 messages of a
-photo or sticker downloads it (up to `MEDIA_MAX_PER_RUN`), even for "2 + 2". Lower
+photo or sticker downloads it (up to `MEDIA_MAX_PER_RUN`), even for "2 + 2". The
+same goes for files: in a book-sharing group a mention near a few books downloads
+each of them (up to 20 MB apiece). That costs download time, not tokens — `agy`
+is told not to open a file unless someone asks about its contents. Lower
 `MEDIA_CONTEXT_MESSAGES` if that bites.
 
 **Stickers count like photos in tier 3** (since 2026-10-16). They used to be
@@ -51,7 +60,9 @@ no stored row, and moves on — it is not a real reply.
 
 ## What is and isn't fetched
 
-- **Photos** and documents with an `image/*` mime.
+- **Photos** and documents with an `image/*` mime — shown to `agy` as pictures.
+- **Any other document** (since 2026-10-20) — handed over as a file; see
+  [Files](#files-epub-pdf-zip).
 - **Stickers**, since they are how half a Vietnamese group chat actually talks. A
   static sticker is a `.webp` and goes to `agy` as-is. An animated (`.tgs`,
   gzipped Lottie) or video (`.webm`) sticker cannot be opened, so what is stored
@@ -67,6 +78,33 @@ no stored row, and moves on — it is not a real reply.
   honest, but are never downloaded.
 - Telegram's `getFile` caps downloads at 20 MB (`MEDIA_MAX_DOWNLOAD_MB`).
 
+## Files (epub, pdf, zip…)
+
+Before 2026-10-20 only images were fetched. On prod, "@bot tải file này up lên
+drive giùm" replied onto an epub got `media=0`: `agy` only saw the history line
+`[file: AI_Engineering….epub]`, then spent 436s (of a 480s budget) hunting
+`/tmp`, Drive, the ebook vault and the web for a book that was never handed
+over, before admitting it couldn't. Now the document is downloaded into the
+workdir and listed in a separate **FILE ĐÍNH KÈM** prompt block with its path,
+its original name and who sent it. The block tells `agy` to:
+
+- use *that* file for anything asked of it (upload to Drive, forward, convert)
+  instead of searching elsewhere, and keep the original name when uploading —
+  the workdir copy has a generated one;
+- not read a binary epub/pdf/zip unless someone asks about its contents — the
+  image block's "open it and look" would cost a fortune on a 20 MB book.
+
+**The workdir copy is always named `file_<tg_message_id>.<ext>`**, never the
+sender's filename. `agy` loads `AGENTS.md`/`GEMINI.md` from its cwd as hard
+workspace rules, so a group member sending a file called that would otherwise be
+writing the bot's rules. Only the extension is kept (from the filename, else the
+mime, else `.bin`). See [security.md](security.md).
+
+**Over 20 MB it cannot be fetched** — Bot API `getFile` refuses it, and lifting
+that needs a self-hosted Bot API server. Rather than drop it silently like an
+image, the file is still listed, marked *KHÔNG tải được*, so `agy` says so
+straight away instead of repeating the 436s hunt.
+
 ## Fetching is lazy
 
 Nothing is downloaded at ingest time. Only the Telegram `file_id` is stored
@@ -77,16 +115,17 @@ photo can still be fetched as long as its row is within retention.
 
 ## Where the file goes
 
-The image is copied into **that run's temp workdir** — the same directory `agy`
+The image (or file) is copied into **that run's temp workdir** — the same directory `agy`
 runs in — chowned to the unprivileged `agy` user, and deleted with the workdir when
 the run ends. Nothing lands in a shared volume, and the prompt refers to it by a
-plain relative path (`./anh_<tg_message_id>.jpg`, or `./sticker_<tg_message_id>.webp`).
+plain relative path (`./anh_<tg_message_id>.jpg`, `./sticker_<tg_message_id>.webp`,
+or `./file_<tg_message_id>.epub`).
 
 A failed download is skipped, never fatal: the run still answers, just without that
 image.
 
-The extension is a guess from the stored mime, then **corrected from the file's
-magic bytes** after download (`_sniff_ext`). Telegram documents a sticker thumbnail
+For an image, the extension is a guess from the stored mime, then **corrected
+from the file's magic bytes** after download (`_sniff_ext`). Telegram documents a sticker thumbnail
 as ".WEBP or .JPG" without saying which, and a document's declared mime can lie —
 `agy` picks its decoder by extension, so a JPEG named `.webp` simply fails to open.
 
@@ -97,4 +136,4 @@ image goes through `agy`'s own file-read path. Measured on
 `gemini-3.8-flash-medium`: **~15s** for a text reply vs **~23s** with one photo
 attached.
 
-`MEDIA_MAX_PER_RUN=0` turns image reading off entirely.
+`MEDIA_MAX_PER_RUN=0` turns image reading — and file fetching — off entirely.

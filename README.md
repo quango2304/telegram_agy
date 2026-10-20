@@ -17,7 +17,7 @@ One `make dev` brings up the whole stack.
 | [architecture.md](docs/architecture.md) | Services, the chat-thread unit, layering, stack |
 | [replies.md](docs/replies.md) | When it answers, batching, the 👀 ack, editing, why failures are silent |
 | [model-routing.md](docs/model-routing.md) | Jev picks Flash or Argon per reply, fallbacks, timeouts |
-| [media.md](docs/media.md) | Reading images (and why voice notes don't work) |
+| [media.md](docs/media.md) | Reading images, fetching sent files (and why voice notes don't work) |
 | [memory-and-history.md](docs/memory-and-history.md) | Prompt window vs retention vs chat memory, full-text search |
 | [scheduled-tasks.md](docs/scheduled-tasks.md) | Reminders, one-off and cron |
 | [mcp-tools.md](docs/mcp-tools.md) | Every tool `agy` can call, and the session-key model |

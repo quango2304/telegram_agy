@@ -26,8 +26,11 @@ Containment has to happen at the OS layer instead.
   stripped again by `SCRUBBED_ENV`.
   Docker Desktop ignores `chmod` on bind mounts, so **dev** shadows the file with
   `- /dev/null:/app/.env:ro` instead.
-- **A fresh empty workdir per call**, deleted afterwards. Attached images live here
-  and die with it.
+- **A fresh empty workdir per call**, deleted afterwards. Attached images and files
+  live here and die with it. Any group member's file lands here, so it always
+  gets a generated name (`file_<id>.<ext>`): `agy` loads `AGENTS.md`/`GEMINI.md`
+  from its cwd as hard rules, and a file sent under that name would otherwise
+  override them.
 - **Bootstrap calls use `env -i`** (`agy_clean` in `docker/entrypoint.sh`) so no
   same-uid process carries secrets in `/proc/<pid>/environ`.
 - **The MCP server** is only reachable on the compose network and every tool is

@@ -48,14 +48,21 @@ class PendingTrigger:
 
 @dataclass(frozen=True)
 class PromptAttachment:
-    """An image already downloaded into the run's workdir, named so agy can open
-    it with a plain relative path."""
+    """An image or file already downloaded into the run's workdir, named so agy
+    can open it with a plain relative path.
+
+    ``missing`` marks a document that could not be fetched (over 20 MB, or the
+    download failed): it is still listed so agy says so instead of hunting for
+    it."""
 
     file_name: str
     sender: str
     tg_message_id: int
     caption: str
     kind: str = "photo"
+    is_image: bool = True
+    original_name: str | None = None
+    missing: bool = False
 
 
 def _strip_handle(text: str, bot_username: str) -> str:
@@ -87,14 +94,52 @@ def _fmt_pending(p: PendingTrigger, bot_username: str, truncate: int) -> str:
 def _fmt_attachments(
     attachments: Sequence[PromptAttachment], bot_username: str, truncate: int
 ) -> str:
-    """The block that tells agy an image is sitting in its working directory.
+    """The block that tells agy an image or file is sitting in its working
+    directory.
 
     Empty string when nothing was attached, so the prompt keeps its old shape on
     the (common) text-only path.
 
     A sticker gets its own wording: it carries no question and its history line is
     only ``[sticker: 😂]``, so the "open it if the question is about the picture"
-    phrasing that works for photos would leave agy guessing at the joke."""
+    phrasing that works for photos would leave agy guessing at the joke.
+
+    Documents get a separate block: "open it and look" is right for a photo and
+    wrong for a 20 MB epub, which is a binary to upload or forward, not read."""
+    images = [a for a in attachments if a.is_image]
+    files = [a for a in attachments if not a.is_image]
+    blocks = [b for b in (_fmt_images(images, bot_username, truncate), _fmt_files(files)) if b]
+    return "\n\n".join(blocks)
+
+
+def _fmt_files(files: Sequence[PromptAttachment]) -> str:
+    if not files:
+        return ""
+    lines = []
+    for a in files:
+        shown = a.original_name or a.file_name
+        if a.missing:
+            lines.append(
+                f'- "{shown}" (tin id={a.tg_message_id}) của {a.sender} — KHÔNG tải được '
+                "(file quá 20 MB, giới hạn của Telegram Bot API, hoặc tải lỗi)"
+            )
+        else:
+            lines.append(
+                f'- ./{a.file_name} — file "{shown}" (tin id={a.tg_message_id}) của {a.sender}'
+            )
+    return (
+        "FILE ĐÍNH KÈM: những file người ta gửi trong chat, đã tải sẵn vào thư mục "
+        "hiện tại (đường dẫn tương đối bên dưới). Khi được nhờ làm gì với file (up "
+        "lên Drive, gửi lại, đổi định dạng…) thì DÙNG CHÍNH FILE NÀY, không đi tìm ở "
+        "chỗ khác. Up lên đâu thì giữ đúng tên gốc trong ngoặc kép — tên local là "
+        "tên tạm, nên `cp` sang tên gốc trước nếu tool lấy tên theo file. Đừng mở/đọc cả "
+        "file nhị phân (epub, pdf, zip…) nếu không ai hỏi về nội dung của nó. File "
+        "ghi KHÔNG tải được thì nói thẳng là không lấy được, đừng đi tìm nơi khác.\n"
+        + "\n".join(lines)
+    )
+
+
+def _fmt_images(attachments: Sequence[PromptAttachment], bot_username: str, truncate: int) -> str:
     if not attachments:
         return ""
     lines = []

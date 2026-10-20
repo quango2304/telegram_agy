@@ -48,9 +48,9 @@ See [memory-and-history.md](memory-and-history.md).
 
 | Key | Default | Notes |
 |---|---|---|
-| `MEDIA_MAX_PER_RUN` | 5 | Max images attached per reply. `0` disables image reading. Each image costs tokens and latency. |
+| `MEDIA_MAX_PER_RUN` | 5 | Max images **and files** attached per reply (one shared budget). `0` disables both. Each image costs tokens and latency; each file a download of up to 20 MB. |
 | `MEDIA_MAX_DOWNLOAD_MB` | 20 | Telegram's `getFile` ceiling anyway. |
-| `MEDIA_CONTEXT_MESSAGES` | 10 | An otherwise-unlinked photo or sticker is attached when it is among this many messages before the trigger. `0` disables. Raising it makes more replies download images. See [media.md](media.md). |
+| `MEDIA_CONTEXT_MESSAGES` | 10 | An otherwise-unlinked photo, sticker or file is attached when it is among this many messages before the trigger. `0` disables. Raising it makes more replies download images and files. See [media.md](media.md). |
 
 See [media.md](media.md).
 

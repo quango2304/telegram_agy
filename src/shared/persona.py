@@ -101,7 +101,9 @@ def tool_usage_guide(
             '`composio search "<việc>"` tìm tool, `composio execute <TOOL_SLUG> '
             "--get-schema` xem input, rồi `composio execute <TOOL_SLUG> -d '{...}'` "
             "để chạy (kết quả download thường là một s3url — dùng "
-            "`curl -sL '<url>' -o /outbox/<tên-file>` để lấy về)."
+            "`curl -sL '<url>' -o /outbox/<tên-file>` để lấy về). Up file lên Drive: "
+            "`GOOGLEDRIVE_UPLOAD_FILE` chỉ nhận file ≤ 5 MB; lớn hơn thì dùng "
+            "`GOOGLEDRIVE_RESUMABLE_UPLOAD` (đặt tên + folder trong `metadata`)."
         )
     for name, text in (mcp_prompts or {}).items():
         parts.append(f"CÔNG CỤ MCP `{name}`: {text}")
