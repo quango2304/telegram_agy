@@ -80,6 +80,24 @@ fact in it should not be dragged into replies on unrelated topics. Without that,
 one salty line (someone's losing stock) became the punchline of every reply in
 the chat — see [model-routing.md](model-routing.md#persona-across-models).
 
+### The `Giọng nhóm` line
+
+The first line of each chat's memory is `- Giọng nhóm: …` — one or two sentences
+(under `STYLE_LINE_MAX_CHARS` = 200, `src/shared/persona.py`) on how that chat
+talks: how people address each other, abbreviations and slang they use, how they
+laugh, short or long messages. The persona tells the model to speak like that, so
+the bot blends into each group instead of having one voice everywhere.
+
+- The model writes it itself via `update_memory`. If the line is missing and the
+  window already has a fair number of human messages, it adds it in that turn —
+  the first reply in a chat after the change may make one extra tool call.
+- It is built from **human** lines only, never `[Gen Đần]` lines; copying the
+  bot's own lines would just lock in whatever voice it already had.
+- It is kept short because it shares the 3000-character soft budget with the
+  facts about members, and the busiest prod group was already at ~2500.
+- Style requests a person made for themselves ("gọi tao là chúa công") stay in
+  their own memory line and win over this chat-wide default.
+
 ### Keeping it small
 
 The prompt sets a **soft budget of 3000 characters**

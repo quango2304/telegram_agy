@@ -83,18 +83,44 @@ boilerplate ("số liệu chỉ tham khảo, quyết định là của sếp"). 
 spells it out: a cheeky friend, not an assistant; a joke in most replies even in
 serious analysis; banned assistant phrases and closing disclaimers; and the
 limits (no looks / family / region / gender jokes, ease off when someone is
-genuinely upset). Re-test **both** models after editing it.
+genuinely upset). Re-test **both** models after editing it. Both routed models
+are Gemini now, so the original reason for pushing jokes hard is mostly gone.
 
 It used to say "at least one joke per reply" and "đá xéo chuyện cũ trong nhóm".
 Together with a single salty fact in chat memory (a member's losing stock), that made
 the bot tack the same jab onto *every* reply — including answers to someone else
 about petrol — and each repetition sitting in the history window reinforced the
-next. The persona now says: joke at the person asking and the topic asked; bring
+next. The persona then said: joke at the person asking and the topic asked; bring
 up someone's backstory only when they are in the conversation or the topic
-matches; skip any jab already used in the recent `[Gen Đần]` history lines; and
-a reply with nothing worth joking about may just answer. A one-line reminder of
-the targeting/no-repeat rule also sits right after the closing instruction,
-because the persona is thousands of characters above the history it refers to.
+matches; skip any jab already used in the recent `[Gen Đần]` history lines.
+
+That fixed the repeated *content* but not the repeated *shape*. With "a joke in
+most replies, even in serious analysis" still in the persona and a cà-khịa
+reminder as the last instruction before `SECRET_GUARD`, almost half of the long
+prod replies (31/70, late Oct 2026) ended in the same closer — "tính X hay Y dị
+anh Gơ?" — and the no-repeat rule never caught it because each jab was new. Bot
+replies also averaged ~580 characters against a human median of ~24. Users found
+it rigid. Since 2026-11-03 the persona aims at "a member of the group":
+
+- **Voice** — mirror how the *humans* in the history window write (abbreviations,
+  slang, how they address each other), plus the `Giọng nhóm` line in chat memory
+  (see [memory-and-history.md](memory-and-history.md#the-giọng-nhóm-line)). Not the
+  old `[Gen Đần]` lines — they carry exactly the style being dropped.
+- **Length by question** — one line for chit-chat, a few sentences for a factual
+  question, long only when asked to summarise, report or analyse.
+- **Jokes are the exception** — only when the topic is actually funny. The
+  "tính X hay Y dị…?" closer and ending every reply with a question back at the
+  asker are banned by name, and the no-repeat rule covers openings and closings,
+  not just jabs.
+- **Per-person requests in memory win** — "gọi chúa công", "cấm khịa sếp" and the
+  like override the calmer default for that person.
+
+The closing reminder after the trigger was rewritten to match. Changing only the
+persona is not enough: that reminder is the last instruction the model reads.
+
+**Expect a lag after deploying a persona change:** the 30-line window of every
+busy topic is full of the bot's own replies in the old style, and the model copies
+them until they scroll out. Test a new persona in a quiet chat.
 
 **Known limit:** history is per forum topic, so a jab used in one topic is
 invisible from another topic of the same group and may be reused there.
