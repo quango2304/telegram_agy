@@ -63,8 +63,13 @@ after a send, because the rerun would repeat it.
 
 When the routed **complex** model gives up before anything was sent, the worker
 reruns the request once on `AGY_MODEL`, with that model's full
-`AGY_TIMEOUT_SECONDS`. Two causes trigger it: an exhausted **quota** and a
-**timeout** (`print_timeout`, or the backstop `timeout`). Either error on
+`AGY_TIMEOUT_SECONDS`. Three causes trigger it:
+
+- an exhausted **quota**
+- a **timeout** (`print_timeout`, or the backstop `timeout`)
+- a **`model_error`**: the complex model's first output was an error
+
+ Either error on
 `AGY_MODEL` itself has nowhere to fall back to and leaves the thread silent. The
 log line is `agy falling back … reason=<error>`, and the rerun's lines carry
 `fallback=1`.
@@ -77,12 +82,28 @@ tí" followed by an Argon timeout still leaves the thread hanging.
 got an `error_message` step at +106s and another at +410s, with 0 tokens and no
 tools. Argon was failing upstream, but `agy` kept the turn open until the 480s
 `--print-timeout`, and the group got nothing. Flash answered the next message in
-26s. The fallback costs time, though: a reply that falls back arrives
+26s. A plain timeout fallback is slow, though: the reply arrives
 `AGY_TIMEOUT_SECONDS_COMPLEX` + up to `AGY_TIMEOUT_SECONDS` after the question
 (up to 16 min on prod). That is late, but better than silence. The Celery limits,
 the thread lock, the lock-wait retries and the session key's TTL are all sized
 for the combined budget (`Settings.reply_timeout_max`). If any of them is
 shorter, the fallback gets killed or raced.
+
+**The early exit (`model_error`)** saves most of that wait in the failure mode
+actually seen. The complex model runs with `bail_on_error`. If its first output
+is an `error_message` step, with no tokens and no tool call yet, the worker kills
+`agy` at once and falls back. From 2026-10-16 to 2026-11-16 that pattern decided
+every case:
+
+- **Argon:** 53 runs. Both failures (`print_timeout`) opened with a no-token
+  `error_message`, at +106s and +304s, and never recovered. No successful run
+  started that way.
+- **Flash:** 56 runs with `error_message` steps. Most came after real output,
+  and several runs that opened with one still finished `ok`.
+
+So the rule is narrow on purpose. It applies only to the complex model (Flash
+has nothing to fall back to and often recovers), and only before any output (an
+error mid-run is usually one failed tool turn, which `agy` retries).
 
 **The quota case:** a 429 whose stderr mentions a **quota** (`Individual quota reached … Resets in
 46h…`) is classified `quota`, not `transient`: the account's allowance for that

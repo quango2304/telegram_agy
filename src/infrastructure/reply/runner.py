@@ -68,9 +68,12 @@ _RETRY_MIN_SECONDS = 60
 # Errors on the routed complex model that rerun once on agy_model with its own
 # full budget, when nothing was sent yet. quota: the allowance is gone for days.
 # print_timeout / timeout: the complex model used its whole budget (seen with
-# Argon erroring with 0 tokens until --print-timeout). background_timeout is
-# left out — that is a slow shell command, which Flash would hit too.
-_FALLBACK_ERRORS = frozenset({"quota", "print_timeout", "timeout"})
+# Argon erroring with 0 tokens until --print-timeout). model_error: the same
+# thing caught early — the complex model runs with bail_on_error, so its first
+# output being an error kills it at once instead of after its whole budget.
+# background_timeout is left out — that is a slow shell command, which Flash
+# would hit too.
+_FALLBACK_ERRORS = frozenset({"quota", "print_timeout", "timeout", "model_error"})
 
 
 @dataclass(frozen=True)
@@ -589,12 +592,16 @@ async def _run_reply(
             label=label,
         )
 
+        # The complex model has somewhere to fall back to, so it is killed as
+        # soon as its first output is an error (see _FALLBACK_ERRORS).
+        can_fall_back = choice.model != settings.agy_model
         result = await agy.run(
             prompt,
             attachments=attachment_paths,
             timeout_s=choice.timeout_s,
             model=choice.model,
             label=label,
+            bail_on_error=can_fall_back,
         )
         sent = await _sent_count(uow_factory, session_key)
 
@@ -617,15 +624,17 @@ async def _run_reply(
                 timeout_s=remaining - _RETRY_DELAY_SECONDS,
                 model=choice.model,
                 label=f"{label} retry=1",
+                bail_on_error=can_fall_back,
             )
             sent = await _sent_count(uow_factory, session_key)
 
-        # The routed complex model gave up (quota spent, or its whole budget
-        # gone) before anything reached the chat: answering on the default
-        # model beats a silent thread. It gets its own full budget — the Celery
-        # limits and lock are sized for complex + default (reply_timeout_max).
+        # The routed complex model gave up (quota spent, its whole budget
+        # gone, or an error before any output) before anything reached the
+        # chat: answering on the default model beats a silent thread. It gets
+        # its own full budget — the Celery limits and lock are sized for
+        # complex + default (reply_timeout_max).
         # The same failure on the default model itself has nowhere to go.
-        if result.error in _FALLBACK_ERRORS and sent == 0 and choice.model != settings.agy_model:
+        if result.error in _FALLBACK_ERRORS and sent == 0 and can_fall_back:
             logger.warning(
                 "agy falling back %s reason=%s from=%s to=%s budget=%ss",
                 label,

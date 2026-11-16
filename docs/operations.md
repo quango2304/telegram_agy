@@ -83,9 +83,9 @@ code.
 | `model router http error … status=… body=…` / `model router request failed` / `model router bad answer` | the Jev call failed; the run continues on `AGY_MODEL`. `status=401`: bad `OPENROUTER_API_KEY`. `402`: OpenRouter credits ran out. |
 | `agy start thread_id=… model=… timeout=Ns` | the `agy` subprocess is launching |
 | `agy step thread_id=… #i DONE tool:<name> {params} took=Xs at=+Ys` | one step finished (model turns log as `agent_response … tokens=N`) |
-| `agy run finished thread_id=… outcome=ok\|print_timeout\|background_timeout\|timeout\|quota\|transient\|nonzero\|no_result\|unsuccessful …` | one line per `agy` run: wall time, tools used, tokens, `conversation_id`; on failure also `stuck=` and `stderr=` |
+| `agy run finished thread_id=… outcome=ok\|print_timeout\|background_timeout\|timeout\|model_error\|quota\|transient\|nonzero\|no_result\|unsuccessful …` | one line per `agy` run: wall time, tools used, tokens, `conversation_id`; on failure also `stuck=` and `stderr=` |
 | `agy transient failure; retrying once` | upstream 5xx/429 with nothing sent; one retry follows |
-| `agy falling back thread_id=… reason=quota\|print_timeout\|timeout from=<complex> to=<default> budget=Ns` | The routed complex model failed before sending anything, and the run is redone once on `AGY_MODEL` (its lines carry `fallback=1`). If you see `reason=quota` on every complex run, the quota is out; `stderr=` on the line before says when it resets. `reason=print_timeout` usually follows `agy step … error_message` lines with no tokens, which means the complex model was failing upstream. |
+| `agy falling back thread_id=… reason=quota\|model_error\|print_timeout\|timeout from=<complex> to=<default> budget=Ns` | The routed complex model failed before sending anything, and the run is redone once on `AGY_MODEL` (its lines carry `fallback=1`). If you see `reason=quota` on every complex run, the quota is out; `stderr=` on the line before says when it resets. `reason=model_error` comes right after an `agy step … error_message` line with no tokens before it: the complex model was failing upstream and was killed at that point. |
 | `agy failed after sending; thread left hanging` | something (usually "chờ tí") went out, then the run failed |
 | `agy called no send tool` / `agy failed; thread left silent` | run finished but the thread stayed silent |
 | `trigger already covered` | a sibling task correctly no-op'd after batching |
@@ -110,6 +110,7 @@ Every run ends in exactly one of `reply sent`, `agy failed after sending`,
 | `outcome=` | Meaning |
 |---|---|
 | `print_timeout` | `agy` hit `--print-timeout` (`AGY_TIMEOUT_SECONDS`, or `AGY_TIMEOUT_SECONDS_COMPLEX` on an Argon run; `limit=` says which). `stuck=` is the step still running — e.g. `tool:run_command {"CommandLine":"curl …"}`. |
+| `model_error` | Only on the complex model (it runs with `bail_on_error`). Its first output was an `error_message` step, before any tokens or tools, so the worker killed `agy` at once instead of waiting for `--print-timeout`. A fallback to `AGY_MODEL` follows. |
 | `background_timeout` | `agy` put a command in the background, ended its turn, waited for it up to the limit, then killed it. `stuck=` shows the command. |
 | `timeout` | Our backstop (timeout + 30s) fired: `agy` itself didn't stop. |
 | `quota` | The model's account quota is spent (`Individual quota reached … Resets in …`). On the complex model the run falls back once to `AGY_MODEL`; on `AGY_MODEL` itself the thread stays silent until the reset. |

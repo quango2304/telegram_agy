@@ -22,6 +22,12 @@ Every fact here was established by testing (agy 1.2.9):
 - ``--log-file`` is language-server noise with no tool trace — not useful.
 - ``duration_seconds`` in the result is not wall time (6s reported for a 19s
   run), so elapsed time is measured here.
+- An upstream model failure shows up as an ``error_message`` step (no extra
+  fields). agy then keeps the turn open and retries on its own. Flash usually
+  recovers. Argon, when its *first* output is an ``error_message`` (no tokens
+  yet), never did in prod: it sat until ``--print-timeout``. So a run started
+  with ``bail_on_error`` is killed at that point and reported as
+  ``model_error``.
 """
 
 from __future__ import annotations
@@ -101,8 +107,9 @@ class AgyResult:
     # print_timeout (agy's own limit, mid-turn), background_timeout (a
     # backgrounded command was killed at the limit), quota (that model's
     # account quota is spent — try another model, not the same one), transient
-    # (upstream 5xx/429 — safe to retry if nothing was sent), nonzero,
-    # no_result, unsuccessful.
+    # (upstream 5xx/429 — safe to retry if nothing was sent), model_error
+    # (bail_on_error: the model failed before producing any output, so we
+    # killed the run), nonzero, no_result, unsuccessful.
     error: str = ""
     elapsed_s: float = 0.0
 
@@ -139,8 +146,12 @@ class _RunTrace:
     Logs every model / tool step as it finishes (``agy step …``). Whatever is
     still ``ACTIVE`` when the run ends is what it was stuck on."""
 
-    def __init__(self, label: str) -> None:
+    def __init__(self, label: str, *, bail_on_error: bool = False) -> None:
         self.label = label
+        self.bail_on_error = bail_on_error
+        # Set when an error_message arrives before any tokens or tools and
+        # bail_on_error is on; _collect kills agy on it.
+        self.bail = asyncio.Event()
         self.started = time.monotonic()
         self.conversation_id = ""
         self.result: dict[str, Any] | None = None
@@ -190,6 +201,13 @@ class _RunTrace:
             self.tools.append(tool)
         tokens = (step.get("usage") or {}).get("total_tokens") or 0
         self.tokens += tokens
+        if (
+            self.bail_on_error
+            and step_type == "error_message"
+            and self.tokens == 0
+            and not self.tools
+        ):
+            self.bail.set()
         logger.info(
             "agy step %s #%s %s %s took=%.1fs%s at=+%.0fs",
             self.label,
@@ -217,6 +235,7 @@ class AgyClient:
         timeout_s: int | None = None,
         model: str | None = None,
         label: str = "",
+        bail_on_error: bool = False,
     ) -> AgyResult:
         """``attachments`` are copied into the run's workdir under their own
         basename, so the prompt can refer to them as plain relative paths — agy
@@ -225,7 +244,10 @@ class AgyClient:
         ``timeout_s`` overrides ``agy_timeout_seconds`` (a retry passes what is
         left of the budget); ``model`` overrides ``agy_model`` (the model router's
         pick). ``label`` (e.g. ``thread_id=5``) prefixes every log
-        line of this run so they can be grepped together."""
+        line of this run so they can be grepped together. ``bail_on_error``
+        kills the run as soon as the model's first output is an error
+        (``model_error``) instead of waiting out the timeout — for a model
+        the caller can fall back from."""
         limit_s = timeout_s or self._s.agy_timeout_seconds
         model = model or self._s.agy_model
         try:
@@ -268,7 +290,7 @@ class AgyClient:
                 f"{limit_s}s",
                 "--dangerously-skip-permissions",
             ]
-            trace = _RunTrace(label)
+            trace = _RunTrace(label, bail_on_error=bail_on_error)
             logger.info(
                 "agy start %s model=%s timeout=%ss prompt_chars=%s attachments=%s",
                 label,
@@ -315,14 +337,22 @@ class AgyClient:
 
         pump_task = asyncio.ensure_future(pump())
         err_task = asyncio.ensure_future(stderr.read())
-        backstop_hit = False
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=limit_s + 30)
-        except TimeoutError:
-            backstop_hit = True
+        backstop_hit = bailed = False
+        exit_task = asyncio.ensure_future(proc.wait())
+        bail_task = asyncio.ensure_future(trace.bail.wait())
+        done, _ = await asyncio.wait(
+            {exit_task, bail_task},
+            timeout=limit_s + 30,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        bail_task.cancel()
+        if exit_task not in done:
+            # Our backstop, or the model failed before any output (bail).
+            bailed = trace.bail.is_set()
+            backstop_hit = not bailed
             _kill_group(proc)
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(proc.wait(), timeout=5)
+                await asyncio.wait_for(exit_task, timeout=5)
         # agy has exited. Drain what it wrote, but a straggler child still
         # holding the pipe must not hang the worker.
         _, pending = await asyncio.wait({pump_task, err_task}, timeout=_DRAIN_GRACE_SECONDS)
@@ -335,7 +365,9 @@ class AgyClient:
         if err_task.done() and not err_task.cancelled() and err_task.exception() is None:
             err_text = err_task.result().decode(errors="replace")
         elapsed = time.monotonic() - trace.started
-        return self._classify(proc.returncode, err_text, trace, limit_s, elapsed, backstop_hit)
+        return self._classify(
+            proc.returncode, err_text, trace, limit_s, elapsed, backstop_hit, bailed
+        )
 
     def _classify(
         self,
@@ -345,11 +377,15 @@ class AgyClient:
         limit_s: int,
         elapsed: float,
         backstop_hit: bool,
+        bailed: bool = False,
     ) -> AgyResult:
         data = trace.result or {}
         denied = data.get("denied_actions") or []
         response = (data.get("response") or "").strip()
-        if backstop_hit:
+        if bailed:
+            # Checked first: we killed agy, which looks like any other failure.
+            error = "model_error"
+        elif backstop_hit:
             error = "timeout"
         elif _PRINT_TIMEOUT_MARKER in err_text or (not response and elapsed >= limit_s):
             error = "print_timeout"

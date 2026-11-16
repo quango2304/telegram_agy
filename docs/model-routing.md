@@ -66,7 +66,8 @@ Two things that look right and are not:
 5. A transient-error retry (see [replies.md](replies.md#one-retry-for-upstream-blips))
    reuses the same model and what is left of *its* budget.
 6. If the complex model hits a **quota** error (its account allowance is spent,
-   e.g. Claude's "Individual quota reached") or **times out**, and nothing was
+   e.g. Claude's "Individual quota reached"), **times out**, or opens with an
+   **error before any output** (`model_error`, killed at once), and nothing was
    sent yet, the run is redone once on `AGY_MODEL` with that model's full budget.
    See [replies.md](replies.md#fallback-to-the-default-model). The worst case is
    a complex question answered by Flash, never silence. Three caveats with
@@ -75,8 +76,9 @@ Two things that look right and are not:
      been seen in Claude's message.
    - If Argon and Flash share one Gemini allowance, running out stops both, and
      the fallback has nowhere to go.
-   - A timeout fallback only starts after Argon's whole 480s, so the reply
-     arrives 8–16 min after the question.
+   - A real timeout fallback only starts after Argon's whole 480s, so that
+     reply arrives 8–16 min after the question. Argon failing upstream is
+     caught earlier, at its first `error_message` (`model_error`).
 
 ## Persona across models
 
