@@ -9,16 +9,17 @@ filled in step 8.
 from __future__ import annotations
 
 from src.infrastructure.celery_app import celery_app
+from src.infrastructure.config import get_settings
 from src.shared.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 # Retries here are the "another reply for this thread is already running" wait
-# (Redis lock held). A single reply can legitimately run for minutes (agy +
-# composio), so the budget must outlast one full run + the lock's TTL:
-# 120 x 5s = 600s.
-_LOCK_WAIT_RETRIES = 120
+# (Redis lock held). A single reply can legitimately run for minutes — a complex
+# model run plus a fallback run — so the wait must outlast the lock's TTL
+# (reply_timeout_max + 240, see reply/runner.py), at 5s per retry.
+_LOCK_WAIT_RETRIES = max(120, (get_settings().reply_timeout_max + 240) // 5 + 1)
 
 
 @celery_app.task(

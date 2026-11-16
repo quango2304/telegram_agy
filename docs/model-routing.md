@@ -65,13 +65,18 @@ Two things that look right and are not:
 4. `agy --model <pick> --print-timeout <that model's budget>`.
 5. A transient-error retry (see [replies.md](replies.md#one-retry-for-upstream-blips))
    reuses the same model and what is left of *its* budget.
-6. A **quota** error on the complex model (its account allowance is spent, e.g.
-   Claude's "Individual quota reached") reruns once on `AGY_MODEL` instead — see
-   [replies.md](replies.md#quota-fallback-to-the-default-model). Worst case stays
-   a complex question answered by Flash, never silence. Two caveats with Argon:
-   the quota check matches the word "quota" in `agy`'s stderr, which was only
-   ever seen in Claude's message; and if Argon and Flash share one Gemini
-   allowance, running out stops both and the fallback has nowhere to go.
+6. If the complex model hits a **quota** error (its account allowance is spent,
+   e.g. Claude's "Individual quota reached") or **times out**, and nothing was
+   sent yet, the run is redone once on `AGY_MODEL` with that model's full budget.
+   See [replies.md](replies.md#fallback-to-the-default-model). The worst case is
+   a complex question answered by Flash, never silence. Three caveats with
+   Argon:
+   - The quota check matches the word "quota" in `agy`'s stderr, which has only
+     been seen in Claude's message.
+   - If Argon and Flash share one Gemini allowance, running out stops both, and
+     the fallback has nowhere to go.
+   - A timeout fallback only starts after Argon's whole 480s, so the reply
+     arrives 8–16 min after the question.
 
 ## Persona across models
 
@@ -169,7 +174,9 @@ journalctl -t telegram_agy-worker-1 --since "7 days ago" --no-pager | grep "mode
 ## Timeouts
 
 Argon is slower and complex asks are tool-heavy (web searches, several steps), so
-it gets its own budget. The Celery soft/hard limits and the per-thread Redis lock
-TTL are sized from the **larger** of the two budgets (`Settings.agy_timeout_max`),
-otherwise a long Argon run would be SIGKILLed by Celery, or its lock would expire
-mid-run and let a second reply race in.
+it gets its own budget. The Celery soft/hard limits, the per-thread Redis lock
+TTL, the lock-wait retries and the session key's TTL are sized for the **whole
+reply**: Argon's budget **plus** a full Flash fallback after it
+(`Settings.reply_timeout_max`, 480 + 480 on prod; only the Flash budget when
+routing is off). If any of them is shorter, Celery SIGKILLs the fallback, or the
+lock expires mid-run and lets a second reply race in.

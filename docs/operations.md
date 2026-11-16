@@ -85,7 +85,7 @@ code.
 | `agy step thread_id=… #i DONE tool:<name> {params} took=Xs at=+Ys` | one step finished (model turns log as `agent_response … tokens=N`) |
 | `agy run finished thread_id=… outcome=ok\|print_timeout\|background_timeout\|timeout\|quota\|transient\|nonzero\|no_result\|unsuccessful …` | one line per `agy` run: wall time, tools used, tokens, `conversation_id`; on failure also `stuck=` and `stderr=` |
 | `agy transient failure; retrying once` | upstream 5xx/429 with nothing sent; one retry follows |
-| `agy quota exhausted; falling back thread_id=… from=<complex> to=<default> budget=Ns` | the routed model's quota is spent; the run is redone once on `AGY_MODEL` (its lines carry `fallback=1`). Seeing this on every complex run means the quota is out — `stderr=` on the line before says when it resets. |
+| `agy falling back thread_id=… reason=quota\|print_timeout\|timeout from=<complex> to=<default> budget=Ns` | The routed complex model failed before sending anything, and the run is redone once on `AGY_MODEL` (its lines carry `fallback=1`). If you see `reason=quota` on every complex run, the quota is out; `stderr=` on the line before says when it resets. `reason=print_timeout` usually follows `agy step … error_message` lines with no tokens, which means the complex model was failing upstream. |
 | `agy failed after sending; thread left hanging` | something (usually "chờ tí") went out, then the run failed |
 | `agy called no send tool` / `agy failed; thread left silent` | run finished but the thread stayed silent |
 | `trigger already covered` | a sibling task correctly no-op'd after batching |

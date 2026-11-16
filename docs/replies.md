@@ -59,21 +59,40 @@ the same model, with whatever is left of that model's budget
 (`AGY_TIMEOUT_SECONDS` or `AGY_TIMEOUT_SECONDS_COMPLEX`; skipped under 60s). Nothing is retried
 after a send, because the rerun would repeat it.
 
-### Quota fallback to the default model
+### Fallback to the default model
 
-A 429 whose stderr mentions a **quota** (`Individual quota reached … Resets in
+When the routed **complex** model gives up before anything was sent, the worker
+reruns the request once on `AGY_MODEL`, with that model's full
+`AGY_TIMEOUT_SECONDS`. Two causes trigger it: an exhausted **quota** and a
+**timeout** (`print_timeout`, or the backstop `timeout`). Either error on
+`AGY_MODEL` itself has nowhere to fall back to and leaves the thread silent. The
+log line is `agy falling back … reason=<error>`, and the rerun's lines carry
+`fallback=1`.
+
+Not `background_timeout`: that is a slow shell command, which Flash would hit
+too. Not after a send: the rerun would repeat what already went out. So a "chờ
+tí" followed by an Argon timeout still leaves the thread hanging.
+
+**The timeout case** was added on 2026-11-16. A photo question routed to Argon
+got an `error_message` step at +106s and another at +410s, with 0 tokens and no
+tools. Argon was failing upstream, but `agy` kept the turn open until the 480s
+`--print-timeout`, and the group got nothing. Flash answered the next message in
+26s. The fallback costs time, though: a reply that falls back arrives
+`AGY_TIMEOUT_SECONDS_COMPLEX` + up to `AGY_TIMEOUT_SECONDS` after the question
+(up to 16 min on prod). That is late, but better than silence. The Celery limits,
+the thread lock, the lock-wait retries and the session key's TTL are all sized
+for the combined budget (`Settings.reply_timeout_max`). If any of them is
+shorter, the fallback gets killed or raced.
+
+**The quota case:** a 429 whose stderr mentions a **quota** (`Individual quota reached … Resets in
 46h…`) is classified `quota`, not `transient`: the account's allowance for that
 model is spent for days, so retrying it 5s later only burns another 6s and still
 leaves the thread silent. On 2026-10-11 the Claude quota ran out while Gemini
 still worked; every message Jev routed to `AGY_MODEL_COMPLEX` (all ebook asks)
 went unanswered until this existed.
 
-So when the routed model is not `AGY_MODEL`, nothing was sent yet and at least
-60s of budget remain, the worker reruns at once on `AGY_MODEL`, with
-`AGY_TIMEOUT_SECONDS` capped by what is left. A quota error on `AGY_MODEL` itself
-has nowhere to fall back to and leaves the thread silent. Each message still
-tries the complex model first (≈6s lost per run while the quota is out); nothing
-remembers the exhaustion between runs.
+Each message still tries the complex model first (≈6s lost per run while the
+quota is out); nothing remembers the exhaustion between runs.
 
 ## Batching rapid triggers
 

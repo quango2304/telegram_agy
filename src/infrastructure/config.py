@@ -94,10 +94,15 @@ class Settings:
     log_format: str = "plain"  # plain | json
 
     @property
-    def agy_timeout_max(self) -> int:
-        """Longest a single agy run may take, whichever model is routed. The
-        Celery limits and the thread lock TTL are sized from this."""
-        return max(self.agy_timeout_seconds, self.agy_timeout_seconds_complex)
+    def reply_timeout_max(self) -> int:
+        """Longest the agy part of one reply may take end to end: with routing
+        on, a full complex-model run plus a full agy_model fallback run after
+        it (quota / timeout, see reply/runner.py). The Celery limits, the
+        thread lock TTL, the lock-wait retries and the session key TTL are all
+        sized from this — any of them shorter kills or races the fallback."""
+        if not self.openrouter_api_key or self.agy_model_complex == self.agy_model:
+            return self.agy_timeout_seconds
+        return self.agy_timeout_seconds_complex + self.agy_timeout_seconds
 
 
 @lru_cache
