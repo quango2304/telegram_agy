@@ -4,13 +4,19 @@ Every `agy` run picks one of two models first:
 
 | | Model (default) | Budget | For |
 |---|---|---|---|
-| simple | `AGY_MODEL` = `gemini-3.8-flash-high` | `AGY_TIMEOUT_SECONDS` = 300s | casual chat, quick Q&A, lookups, translation, reminders |
+| simple | `AGY_MODEL` = `gemini-4-hydrogen-high` | `AGY_TIMEOUT_SECONDS` = 300s | casual chat, quick Q&A, lookups, translation, reminders |
 | complex | `AGY_MODEL_COMPLEX` = `gemini-4-argon-medium` | `AGY_TIMEOUT_SECONDS_COMPLEX` = 480s | market outlook, evaluation / valuation, comparisons, multi-step reasoning, finding / downloading / sending a book or file |
 
 The complex model was `claude-sonnet-5-5-high` until 2026-10-14, when `agy`
 added Gemini 4 Argon (`agy models`: `gemini-4-argon-low|medium|high`). `-medium`
 was chosen over `-high` for speed and quota; Gemini 3.1 Pro, the old code
 default, is no longer offered.
+
+The simple model was `gemini-3.8-flash-high` until 2026-11-18, when it moved to
+Gemini 4 Hydrogen (`agy models`: `gemini-4-hydrogen-low|medium|high|xhigh`).
+`-high` keeps the effort level Flash ran at. On a one-line Vietnamese question
+it took ~10s against Flash's ~8s. Notes below that say "Flash" record what
+Flash did; they were not re-measured on Hydrogen.
 
 Book and file asks are deliberately **complex** (added 2026-10-11). They are
 multi-tool jobs: Composio Drive search, then download, then `send_chat_file`, or
@@ -36,7 +42,7 @@ a one-line description), and Jev's `choice` is the model to run.
   scheduled run) plus the **6 most recent history lines**, each clipped to 300
   chars. Images are shown as `[ảnh]` and are not sent. The history is there so
   follow-ups route correctly: "thế còn HPG?" after a VN-Index question goes to
-  Argon, "thêm cái nữa" after a joke stays on Flash.
+  Argon, "thêm cái nữa" after a joke stays on Hydrogen.
 - One pick per run. A batch of several pending triggers goes in together and
   shares one model.
 - Measured: **~0.65s**, **~$0.00002** per call (input tokens only), 9/9 on a
@@ -70,12 +76,14 @@ Two things that look right and are not:
    **error before any output** (`model_error`, killed at once), and nothing was
    sent yet, the run is redone once on `AGY_MODEL` with that model's full budget.
    See [replies.md](replies.md#fallback-to-the-default-model). The worst case is
-   a complex question answered by Flash, never silence. Three caveats with
+   a complex question answered by Hydrogen, never silence. Three caveats with
    Argon:
    - The quota check matches the word "quota" in `agy`'s stderr, which has only
      been seen in Claude's message.
-   - If Argon and Flash share one Gemini allowance, running out stops both, and
-     the fallback has nowhere to go.
+   - If Argon and Hydrogen share one Gemini allowance (unverified; both are
+     Gemini 4), running out stops both, and the fallback has nowhere to go.
+     How Hydrogen's allowance compares with Flash's is also unknown, and it
+     now handles every run that is not routed to Argon.
    - A real timeout fallback only starts after Argon's whole 480s, so that
      reply arrives 8–16 min after the question. Argon failing upstream is
      caught earlier, at its first `error_message` (`model_error`).
@@ -136,7 +144,7 @@ invisible from another topic of the same group and may be reused there.
 
 Routing **never blocks a reply**. Any router failure (no key, timeout, HTTP
 error, an answer that is not one of the two names) falls back to `AGY_MODEL` with
-its normal budget. Worst case is a complex question answered by Flash, never
+its normal budget. Worst case is a complex question answered by Hydrogen, never
 silence. The `by=` field of the `model routed` log line says which case it was.
 See [operations.md](operations.md).
 
@@ -161,7 +169,7 @@ model routed thread_id=1 model=gemini-4-argon-medium by=jev p_complex=0.99 confi
   whether a new Jev release changed things.
 - The `agy run finished` line for the same `thread_id` right after says how it
   went on that model (elapsed, tools, outcome). Argon picks that finish in a few
-  seconds with no tools, or Flash picks that time out, are misroutes.
+  seconds with no tools, or Hydrogen picks that time out, are misroutes.
 
 On the VPS (journald, kept across deploys):
 
@@ -178,7 +186,7 @@ journalctl -t telegram_agy-worker-1 --since "7 days ago" --no-pager | grep "mode
 Argon is slower and complex asks are tool-heavy (web searches, several steps), so
 it gets its own budget. The Celery soft/hard limits, the per-thread Redis lock
 TTL, the lock-wait retries and the session key's TTL are sized for the **whole
-reply**: Argon's budget **plus** a full Flash fallback after it
-(`Settings.reply_timeout_max`, 480 + 480 on prod; only the Flash budget when
+reply**: Argon's budget **plus** a full Hydrogen fallback after it
+(`Settings.reply_timeout_max`, 480 + 480 on prod; only the Hydrogen budget when
 routing is off). If any of them is shorter, Celery SIGKILLs the fallback, or the
 lock expires mid-run and lets a second reply race in.

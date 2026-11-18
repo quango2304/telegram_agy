@@ -97,7 +97,7 @@ at `stuck=` in the `agy run finished` line ([operations.md](operations.md)).
   a lazily-called CLI and not an MCP server
   ([composio-and-files.md](composio-and-files.md)). Use `disabled` for anything
   you don't need right now.
-- **Write a `prompt`.** Without one, Flash discovers the tool but uses it badly.
+- **Write a `prompt`.** Without one, the simple model (Flash at the time) discovered the tool but used it badly.
   In testing, a slow tool (~45–90s per call) was called four times, the model
   wandered off probing `/proc`, and the run timed out. With a one-paragraph
   `prompt` ("call it ONCE with a short query, it's slow, don't probe the system,
@@ -105,7 +105,7 @@ at `stuck=` in the `agy run finished` line ([operations.md](operations.md)).
 - Tool-heavy asks should run on the complex model. Book and file searches are in
   Jev's complex criteria for this reason ([model-routing.md](model-routing.md)).
   If you add a server for a new kind of job, check the `model routed` line for
-  it, and extend `_COMPLEX_CRITERIA` in `model_router.py` if Flash gets it.
+  it, and extend `_COMPLEX_CRITERIA` in `model_router.py` if the simple model gets it.
 - Large tool outputs are spilled by `agy` into a file under
   `/home/agy/.gemini/antigravity-cli/brain/…`, which it then reads with
   `view_file`. Those extra steps in the log are normal.

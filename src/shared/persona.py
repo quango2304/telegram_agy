@@ -1,6 +1,7 @@
 """The Gen Đần persona — kept in ONE constant so it can be tuned without hunting.
 
-This style is tuned for both ``gemini-3.8-flash-high`` (simple) and
+This style was tuned on ``gemini-3.8-flash-high`` and is used with
+``gemini-4-hydrogen-high`` (simple, since 2026-11-18) and
 ``gemini-4-argon-medium`` (complex, via model routing): Vietnamese, talks like a
 member of the group (mirrors the humans in the history window plus the
 "Giọng nhóm" line in chat memory), length by question, no markdown. Jokes are

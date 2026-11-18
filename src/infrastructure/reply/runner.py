@@ -71,8 +71,8 @@ _RETRY_MIN_SECONDS = 60
 # Argon erroring with 0 tokens until --print-timeout). model_error: the same
 # thing caught early — the complex model runs with bail_on_error, so its first
 # output being an error kills it at once instead of after its whole budget.
-# background_timeout is left out — that is a slow shell command, which Flash
-# would hit too.
+# background_timeout is left out — that is a slow shell command, which the
+# simple model would hit too.
 _FALLBACK_ERRORS = frozenset({"quota", "print_timeout", "timeout", "model_error"})
 
 
